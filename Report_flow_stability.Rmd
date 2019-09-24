@@ -1,0 +1,103 @@
+---
+title: "Attune flow stability comparison"
+author: "F.M. Kerckhof, Tara Baele & Ruben Props"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    code_folding: hide
+    highlight: haddock
+    theme: cerulean
+    fig_caption: yes
+    keep_md: yes
+    number_sections: yes
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+      toc_dept: 3
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+# Knitr options ----------------------------------------------------------------
+knitr::opts_chunk$set(eval = TRUE, 
+                      echo = TRUE, 
+                      cache = TRUE, 
+                      include = TRUE, 
+                      collapse = FALSE, 
+                      dependson = NULL, 
+                      engine = "R", # Chunks will always have R code, unless noted
+                      error = TRUE,
+                      fig.path="Figures/cached/",  # Set the figure options
+                      fig.align = "center"
+                      )
+
+# Load required packages -------------------------------------------------------
+#library(Phenoflow)
+library(flowAI)    # automated 
+library(flowCore)  # handle FCS files
+library(readxl)    # read from excel
+library(openxlsx)  # write to excel
+# load flowSets ----------------------------------------------------------------
+attuneYGbeads <- flowCore::read.flowSet(path="Data/Attune_BRXX/1um_YG_dils/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+VerseYGbeads  <- flowCore::read.flowSet(path="Data/FACSVerse/1um_YG_beads/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+
+attune8peak <- flowCore::read.flowSet(path="Data/Attune_BRXX/8PeakDils/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+Verse8peak  <- flowCore::read.flowSet(path="Data/FACSVerse/8peak/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+
+
+# create metadata template -----------------------------------------------------
+attuneYGnames <- sampleNames(attuneYGbeads)
+attuneYGevs   <- fsApply(attuneYGbeads,function(x)nrow(x))
+attuneYGdf    <- data.frame(Filename=attuneYGnames,Events=attuneYGevs)
+
+FACSVerseYGnames <- sampleNames(VerseYGbeads)
+FACSVerseYGevs   <- fsApply(VerseYGbeads,function(x)nrow(x))
+FACSVerseYGdf    <- data.frame(Filename=FACSVerseYGnames,Events=FACSVerseYGevs)
+
+attune8pknames <- sampleNames(attune8peak)
+attune8pkevs   <- fsApply(attune8peak,function(x)nrow(x))
+attune8pkdf    <- data.frame(Filename=attune8pknames,Events=attune8pkevs)
+
+FACSVerse8pknames <- sampleNames(Verse8peak)
+FACSVerse8pkevs   <- fsApply(Verse8peak,function(x)nrow(x))
+FACSVerse8pkdf    <- data.frame(Filename=FACSVerse8pknames,
+                                Events=FACSVerse8pkevs)
+
+```
+
+# Introduction
+
+This is an R markdown report evaluating actual code on raw FCS files obtained
+from the BD FACSVerse and the Thermo Fisher Attune BRxx. The default analysis
+workflow is followed. We evaluated 5 types of samples (listed below):
+
+Sample Type  | Description
+-------------|-------------------
+1µm YG beads | In-plate dilution of Molecular Probes FluoSpheres Polystyrene Microspheres, 1.0μm, yellow-green fluorescent (505/515), for tracer studies (Thermo Fisher Scientific cat. F13081) in 0.20µm filtered PBS (Sigma) using a Tecan Freedom Evo liquid handling robot.
+8-peak beads | In-plate dilution of 8-peak beads in 0.20µm filtered PBS (Sigma) using a Tecan Freedom Evo liquid handling robot.
+TruCount dilutions | In-plate dilution of Becton-Dickinson TruCount (cat. 340334) in 0.20µm filtered PBS (Sigma) using a Tecan Freedom Evo liquid handling robot.
+VibrioRamlibacter | In-plate dilution of axenic *Vibrio campbelii* in 0.20 µm-filtered instant ocean and *Ramlibacter aquaticus* in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
+Tapwater_PBSmedium | In-plate dilution of different tap-waters from the lab in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
+Tapwater_Evianmedium | In-plate dilution of different tap-waters from the lab in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
+
+# Gate setup
+
+## YG beads
+
+```{r YGgating, cache=TRUE}
+
+```
+
+
+# Test 1: Event removal by flowAI
+
+
+# Test 2: distribution stability before and after presumed "gaps"
+
+# Test 3: volumetric accuracy
