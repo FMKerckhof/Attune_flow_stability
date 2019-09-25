@@ -125,7 +125,7 @@ FACSVerseTWEVevs   <- fsApply(VerseTWEV,function(x)nrow(x))
 FACSVerseTWEVdf    <- data.frame(Filename=FACSVerseTWEVnames,
                                    Events=FACSVerseTWEVevs)
 
-# write out metadata template
+# write out metadata template --------------------------------------------------
 openxlsx::write.xlsx(list(AttuneYG=attuneYGdf,FACSVerseYG=FACSVerseYGdf,
                           Attune8pk=attune8pkdf,FACSVerse8pk=FACSVerse8pkdf,
                           AttuneTC=attuneTCkdf,FACSVerseTC=FACSVerseTCkdf,
@@ -134,6 +134,14 @@ openxlsx::write.xlsx(list(AttuneYG=attuneYGdf,FACSVerseYG=FACSVerseYGdf,
                           AttuneTWE=attuneTWEVdf,FACSVerseTWE=FACSVerseTWEVdf),
                      file = "MetaData_template.xlsx")
 
+# read in metadata with unique identifiers -------------------------------------
+sheetnames <- readxl::excel_sheets("Metadata_Attune_Flowrates.xlsx")
+mdlist <- vector("list",length(sheetnames))
+names(mdlist) <- sheetnames
+for(i in sheetnames){
+  mdlist[[i]]<-readxl::read_xlsx("Metadata_Attune_Flowrates.xlsx",sheet = i)
+}
+mddf <- do.call(rbind,mdlist)
 ```
 
 # Introduction
