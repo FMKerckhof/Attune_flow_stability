@@ -50,6 +50,25 @@ attune8peak <- flowCore::read.flowSet(path="Data/Attune_BRXX/8PeakDils/",
 Verse8peak  <- flowCore::read.flowSet(path="Data/FACSVerse/8peak/",
                                         pattern = "*.fcs",emptyValue = FALSE)
 
+attuneTruCount <- flowCore::read.flowSet(path="Data/Attune_BRXX/TruCountDils/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+VerseTruCount  <- flowCore::read.flowSet(path="Data/FACSVerse/TruCountDilutions/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+
+attuneRamVib <- flowCore::read.flowSet(path="Data/Attune_BRXX/RamilbacterVibrio/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+VerseRamVib  <- flowCore::read.flowSet(path="Data/FACSVerse/VibrioRamilbacter/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+
+attuneTWPBS <- flowCore::read.flowSet(path="Data/Attune_BRXX/Tapwater_PBSMedium/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+VerseTWPBS  <- flowCore::read.flowSet(path="Data/FACSVerse/Tapwater_PBSMedium/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+
+attuneTWEV <- flowCore::read.flowSet(path="Data/Attune_BRXX/Tapwater_EvianMedium/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+VerseTWEV  <- flowCore::read.flowSet(path="Data/FACSVerse/Tapwater_EvianMedium/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
 
 # create metadata template -----------------------------------------------------
 attuneYGnames <- sampleNames(attuneYGbeads)
@@ -69,6 +88,52 @@ FACSVerse8pkevs   <- fsApply(Verse8peak,function(x)nrow(x))
 FACSVerse8pkdf    <- data.frame(Filename=FACSVerse8pknames,
                                 Events=FACSVerse8pkevs)
 
+attuneTCknames <- sampleNames(attuneTruCount)
+attuneTCkevs   <- fsApply(attuneTruCount,function(x)nrow(x))
+attuneTCkdf    <- data.frame(Filename=attuneTCknames,Events=attuneTCkevs)
+
+FACSVerseTCknames <- sampleNames(VerseTruCount)
+FACSVerseTCkevs   <- fsApply(VerseTruCount,function(x)nrow(x))
+FACSVerseTCkdf    <- data.frame(Filename=FACSVerseTCknames,
+                                Events=FACSVerseTCkevs)
+
+attuneRamVibnames <- sampleNames(attuneRamVib)
+attuneRamVibevs   <- fsApply(attuneRamVib,function(x)nrow(x))
+attuneRamVibdf    <- data.frame(Filename=attuneRamVibnames,
+                                Events=attuneRamVibevs)
+
+FACSVerseRamVibnames <- sampleNames(VerseRamVib)
+FACSVerseRamVibevs   <- fsApply(VerseRamVib,function(x)nrow(x))
+FACSVerseRamVibdf    <- data.frame(Filename=FACSVerseRamVibnames,
+                                   Events=FACSVerseRamVibevs)
+
+attuneTWPBSnames <- sampleNames(attuneTWPBS)
+attuneTWPBSevs   <- fsApply(attuneTWPBS,function(x)nrow(x))
+attuneTWPBSdf    <- data.frame(Filename=attuneTWPBSnames,Events=attuneTWPBSevs)
+
+FACSVerseTWPBSnames <- sampleNames(VerseTWPBS)
+FACSVerseTWPBSevs   <- fsApply(VerseTWPBS,function(x)nrow(x))
+FACSVerseTWPBSdf    <- data.frame(Filename=FACSVerseTWPBSnames,
+                                   Events=FACSVerseTWPBSevs)
+
+attuneTWEVnames <- sampleNames(attuneTWEV)
+attuneTWEVevs   <- fsApply(attuneTWEV,function(x)nrow(x))
+attuneTWEVdf    <- data.frame(Filename=attuneTWEVnames,Events=attuneTWEVevs)
+
+FACSVerseTWEVnames <- sampleNames(VerseTWEV)
+FACSVerseTWEVevs   <- fsApply(VerseTWEV,function(x)nrow(x))
+FACSVerseTWEVdf    <- data.frame(Filename=FACSVerseTWEVnames,
+                                   Events=FACSVerseTWEVevs)
+
+# write out metadata template
+openxlsx::write.xlsx(list(AttuneYG=attuneYGdf,FACSVerseYG=FACSVerseYGdf,
+                          Attune8pk=attune8pkdf,FACSVerse8pk=FACSVerse8pkdf,
+                          AttuneTC=attuneTCkdf,FACSVerseTC=FACSVerseTCkdf,
+                          AttuneRV=attuneRamVibdf,FACSVerseRV=FACSVerseRamVibdf,
+                          AttuneTWP=attuneTWPBSdf,FACSVerseTWP=FACSVerseTWPBSdf,
+                          AttuneTWE=attuneTWEVdf,FACSVerseTWE=FACSVerseTWEVdf),
+                     file = "MetaData_template.xlsx")
+
 ```
 
 # Introduction
@@ -86,11 +151,62 @@ VibrioRamlibacter | In-plate dilution of axenic *Vibrio campbelii* in 0.20 µm-f
 Tapwater_PBSmedium | In-plate dilution of different tap-waters from the lab in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
 Tapwater_Evianmedium | In-plate dilution of different tap-waters from the lab in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
 
-# Gate setup
+# Materials & Methods
 
-## YG beads
+## Beads and diluents
+
+## Robot setup
+
+A fixed-tip Tecan Freedom Evo 100 robot was used for making the dilutions of the
+beads. The needles were cleaned in between the bead types using mild bleach and
+ethanol. The needles were pre-conditioned with the buffer, and all wells were
+mixed three times before transferring serial dilutions to 200 µL final volume.
+
+## Flow cytometer setup
+
+### Thermo Scientific Attune NXT 2019 BRxx
+
+A dual-laser (BR) Attune NXT equiped with the Attune NXT autosampler was calibrated
+daily using performance tracking beads. All measurements were executed at a 
+flowrate of 100 µL/min and the stopping criteria were set at 100 µL of processed
+volume. 
+
+### Bectond Dickinson FACSVerse 
+
+A three-laser (BRV) FACSVerse equiped with the FACS Universal loader was calibrated
+daily using FACSuite CS&T research beads. All measurements were run on medium 
+flowrate (approx. 60 µL/min) with a stopping criteria of 100.000 events or 1 min
+(whichever was reached first). A preview time of 20 seconds was included for
+flow stabilisation in each sample. 
+
+
+## Gate setup
+
+Gates were set-up on the undiluted wells (shown below), but verified for all.
+For the Attune, two flowsets were created: one without time-based cutoff, and
+one with a 20 seconds filtered cutoff, for reasons of comparability with the
+FACSVerse. 
+
+### YG beads
 
 ```{r YGgating, cache=TRUE}
+attuneYGbeads.trf <- transform(attuneYGbeads,`FSC-H`=asinh(`FSC-H`),
+                               `SSC-H`=asinh(`SSC-H`),
+                               `BL1-H`=asinh(`BL1-H`))
+VerseYGbeads.trf <- transform(VerseYGbeads,`FSC-H`=asinh(`FSC-H`),
+                               `SSC-H`=asinh(`SSC-H`),
+                               `FITC-H`=asinh(`FITC-H`),
+                               `V500-H`=asinh(`V500-H`))
+
+rectGateAttuneTime <- rectangleGate("Time"=c(20e3L,Inf),
+                                    filterId = "TimeGateAttune")
+
+attuneYGbeads.trf.prv <- Subset(attuneYGbeads.trf,rectGateAttuneTime)
+
+
+sqrcutAttuneYG <- matrix(c(8.75,8.75,14,14,3,7.5,14,3),ncol=2, nrow=4)
+colnames(sqrcutAttuneYG) <- c("SSC-H","BL1-H")
+polyGateAttuneYG <- polygonGate(.gate=sqrcutAttuneYG, filterId = "YG Beads")
 
 ```
 
