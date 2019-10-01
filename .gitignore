@@ -40,3 +40,7 @@ rsconnect/
 *.JPG
 *.zip
 *.apx
+*.RData
+
+# Output from flowAI (except for text report)
+*.html

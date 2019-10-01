@@ -34,11 +34,115 @@ knitr::opts_chunk$set(eval = TRUE,
                       )
 
 # Load required packages -------------------------------------------------------
-#library(Phenoflow)
-library(flowAI)    # automated 
+library(flowAI)    # automated FC data cleaning 
 library(flowCore)  # handle FCS files
+library(flowViz)   # graph cytometry data
 library(readxl)    # read from excel
 library(openxlsx)  # write to excel
+library(tidyverse) # data wrangling
+# custom functions -------------------------------------------------------------
+gatechekR <- function(samples,flowset,gatetemplate,plot_treshold=1e3L){
+  # Based on an original script by Ruben Props
+      sam_sizes <- fsApply(flowset, use.exprs = TRUE, 
+                         FUN = function(x) nrow(x))[samples]
+      # Intialize plotting parameters
+      paramsgate <- parameters(gatetemplate)
+      form_gate <- formula(substitute(y ~ x, list(
+        x = as.name(paramsgate[1]), y =  as.name(paramsgate[2])
+      )))
+      # get min/max parameter values
+      min_x = min(fsApply(flowset, use.exprs = TRUE, 
+                          FUN = function(x) apply(x, 2, min))[, paramsgate[1]])
+      max_x = max(fsApply(flowset, use.exprs = TRUE, 
+                          FUN = function(x) apply(x, 2, max))[, paramsgate[1]])
+      min_y = min(fsApply(flowset, use.exprs = TRUE, 
+                          FUN = function(x) apply(x, 2, min))[, paramsgate[2]])
+      max_y = max(fsApply(flowset, use.exprs = TRUE, 
+                          FUN = function(x) apply(x, 2, max))[, paramsgate[2]])
+      #  Gating quality check
+      flowset_sel <- flowset[samples, paramsgate[1:2]]
+      suppressWarnings(print(
+        xyplot(
+          x = form_gate,
+          data = flowset_sel,
+          filter = gatetemplate,
+          scales = list(y = list(limits = c(0.75*min_y, 1.15*max_y)),
+            x = list(limits = c(0.75*min_x, 1.15*max_x))),
+          nbin = 2L^9,
+          xbin = 200,
+          xlab=list(label=paramsgate[1],cex=2),
+          ylab=list(label=paramsgate[2],cex=2),
+          margin = TRUE, binTrans = "log",
+          par.strip.text = list(col = "white", font = 2, cex = 1),
+          smooth = FALSE
+        )
+      ))
+}
+flowAIcallR <- function(flowset,param=c("BL1-H","BL2-H","SSC-H","FSC-H"),
+                        timesplit=0.1,timechannel="Time",experiment="AttuneYG",
+                        minevents=1e3L,decomp=TRUE){
+  # based upon original script by Ruben Props
+  # Extract sample names
+  samplenames <- flowCore::sampleNames(flowset)
+  # Only include samples with enough events
+  flowset_sel <- flowset[which(fsApply(flowset,function(x)nrow(x))>=minevents)]
+  
+  # Extract parameters not to base denoising on
+  param_f <- BiocGenerics::unique(gsub(param, pattern = "-H|-A|-W",
+    replacement = ""))
+  filter_param <- BiocGenerics::colnames(flowset)
+  filter_param <- BiocGenerics::unique(gsub(filter_param,
+    pattern = "-H|-A|-W",
+    replacement = ""))
+  filter_param <- filter_param[!filter_param %in% param_f &
+      filter_param != timechannel]
+  filter_param <- c(filter_param, "FSC", "SSC")
+  
+  # Denoise with flowAI
+  x <- flowAI::flow_auto_qc(
+    flowset_sel,
+    alphaFR = 0.01,
+    output = 1,
+    timeCh = timechannel,
+    ChExcludeFM = filter_param,
+    ChExcludeFS = filter_param,
+    decompFR = decomp,
+    second_fractionFR = timesplit,
+    fcs_highQ = "HighQ",
+    fcs_QC = FALSE,
+    folder_results = paste("resultsQC",experiment,sep="_")
+  )
+  
+  # Change characters in parameter description from character back to numeric
+  # Otherwise nothing that follows will work
+  for(i in 1:length(x)){
+    x[[i]]@parameters@data[,3] <- as.numeric(x[[i]]@parameters@data[,3])
+    x[[i]]@parameters@data[,4] <- as.numeric(x[[i]]@parameters@data[,4])
+    x[[i]]@parameters@data[,5] <- as.numeric(x[[i]]@parameters@data[,5])
+    if(x[[i]]@description$FCSversion == "3"){
+      x[[i]]@description$ORIGINALGUID <- sampleNames(x)[i]
+    } else x[[i]]@description$GUID.original <- sampleNames(x)[i]
+  }
+  return(x)
+}
+
+evtstodf <- function(x){data.frame(Filename=rownames(x),
+                                   QCevents=x)}
+filterinfo <- function(x=eventsAttuneYGQC.df,
+                       joinw=eventsAttuneYGB4.df,
+                       joinb="Filename",
+                       fAIfldr="resultsQC_AttuneYG/",
+                       mth="regular"){
+  FIdf <- dplyr::inner_join(x=x,y=joinw,by=joinb)
+  FIdf$percentRemoved <- (1-FIdf$QCevents/
+                                          FIdf$events)*100
+  flowAIQCinfo <- data.table::fread(paste0(fAIfldr,"QCmini.txt"))
+  FIdf$percentFRAnomalies <- flowAIQCinfo$`% anomalies flow Rate`
+  FIdf$percentSGAnomalies <- flowAIQCinfo$`% anomalies Signal`
+  FIdf$percentDRAnomalies <- flowAIQCinfo$`% anomalies Margins`
+  FIdf$method <- mth
+  return(FIdf)
+}
 # load flowSets ----------------------------------------------------------------
 attuneYGbeads <- flowCore::read.flowSet(path="Data/Attune_BRXX/1um_YG_dils/",
                                         pattern = "*.fcs",emptyValue = FALSE)
@@ -179,7 +283,7 @@ daily using performance tracking beads. All measurements were executed at a
 flowrate of 100 µL/min and the stopping criteria were set at 100 µL of processed
 volume. 
 
-### Bectond Dickinson FACSVerse 
+### Becton Dickinson FACSVerse 
 
 A three-laser (BRV) FACSVerse equiped with the FACS Universal loader was calibrated
 daily using FACSuite CS&T research beads. All measurements were run on medium 
@@ -197,7 +301,7 @@ FACSVerse.
 
 ### YG beads
 
-```{r YGgating, cache=TRUE}
+```{r YGgating, cache=TRUE, fig.cap=c("Gating strategy on undiluted YG bead mix in the Attune, asinh transformed parameters","Gating strategy on undiluted YG bead mix in the Attune after removal of the first 20 seconds of data, asinh transformed parameters","Remaining events of 6 random samples of Attune data of the YG bead mix after applying the selected gate","Gating strategy on undiluted YG bead mix in the FACSVerse, asinh transformed parameters","Remaining events of 6 random samples of FACSVerse data of the YG bead mix after applying the selected gate")}
 attuneYGbeads.trf <- transform(attuneYGbeads,`FSC-H`=asinh(`FSC-H`),
                                `SSC-H`=asinh(`SSC-H`),
                                `BL1-H`=asinh(`BL1-H`))
@@ -212,16 +316,311 @@ rectGateAttuneTime <- rectangleGate("Time"=c(20e3L,Inf),
 attuneYGbeads.trf.prv <- Subset(attuneYGbeads.trf,rectGateAttuneTime)
 
 
-sqrcutAttuneYG <- matrix(c(8.75,8.75,14,14,3,7.5,14,3),ncol=2, nrow=4)
+sqrcutAttuneYG <- matrix(c(10.5,11,12,11.5,11,11.8,11.9,11.2),ncol=2, nrow=4)
 colnames(sqrcutAttuneYG) <- c("SSC-H","BL1-H")
 polyGateAttuneYG <- polygonGate(.gate=sqrcutAttuneYG, filterId = "YG Beads")
+
+sqrcutFACSVerseYG <- matrix(c(11.2,11.2,12.2,12.2,8,9,10,8),ncol=2, nrow=4)
+colnames(sqrcutFACSVerseYG) <- c("SSC-H","FITC-H")
+polyGateFACSVerseYG <- polygonGate(.gate=sqrcutFACSVerseYG, filterId = "YG Beads")
+
+GatingsamplesAttuneYG <- as.character(unlist(mddf %>% 
+                                               dplyr::filter(Cytometer=="AttuneBRxx"&
+                                                Experiment=="YG"&
+                                                Dilution==1) %>% 
+                                  dplyr::select(Filename)))
+
+GatingsamplesFACSVerseYG <- as.character(unlist(mddf %>% 
+                                               dplyr::filter(Cytometer=="FACSVerse"&
+                                                Experiment=="YG"&
+                                                Dilution==1) %>% 
+                                  dplyr::select(Filename)))
+
+randoAttuneYG <- sampleNames(attuneYGbeads.trf[sample(1:length(attuneYGbeads.trf),6)])
+randoVerseYG <- sampleNames(VerseYGbeads.trf[sample(1:length(VerseYGbeads.trf),6)])
+
+gatechekR(GatingsamplesAttuneYG,attuneYGbeads.trf,polyGateAttuneYG)
+gatechekR(GatingsamplesAttuneYG,attuneYGbeads.trf.prv,polyGateAttuneYG)
+
+attuneYGbeads.trf.beads <- flowCore::Subset(attuneYGbeads.trf,
+                                         polyGateAttuneYG)
+attuneYGbeads.trf.prv.beads <- flowCore::Subset(attuneYGbeads.trf.prv,
+                                         polyGateAttuneYG)
+
+gatechekR(randoAttuneYG,attuneYGbeads.trf.beads,polyGateAttuneYG)
+
+gatechekR(GatingsamplesFACSVerseYG,VerseYGbeads.trf,polyGateFACSVerseYG)
+
+VerseYGbeads.trf.beads <- flowCore::Subset(VerseYGbeads.trf,
+                                           polyGateFACSVerseYG)
+
+gatechekR(GatingsamplesFACSVerseYG,VerseYGbeads.trf.beads,polyGateFACSVerseYG)
+```
+
+### 8-Peak beads
+
+```{r 8Pkgating, cache=TRUE, fig.cap=c("Gating strategy on undiluted YG bead mix in the Attune, asinh transformed parameters","Gating strategy on undiluted YG bead mix in the Attune after removal of the first 20 seconds of data, asinh transformed parameters","Remaining events of 6 random samples of Attune data of the YG bead mix after applying the selected gate","Gating strategy on undiluted YG bead mix in the FACSVerse, asinh transformed parameters","Remaining events of 6 random samples of FACSVerse data of the YG bead mix after applying the selected gate"),eval=FALSE}
+attuneYGbeads.trf <- transform(attuneYGbeads,`FSC-H`=asinh(`FSC-H`),
+                               `SSC-H`=asinh(`SSC-H`),
+                               `BL1-H`=asinh(`BL1-H`))
+VerseYGbeads.trf <- transform(VerseYGbeads,`FSC-H`=asinh(`FSC-H`),
+                               `SSC-H`=asinh(`SSC-H`),
+                               `FITC-H`=asinh(`FITC-H`),
+                               `V500-H`=asinh(`V500-H`))
+
+rectGateAttuneTime <- rectangleGate("Time"=c(20e3L,Inf),
+                                    filterId = "TimeGateAttune")
+
+attuneYGbeads.trf.prv <- Subset(attuneYGbeads.trf,rectGateAttuneTime)
+
+
+sqrcutAttuneYG <- matrix(c(10.5,11,12,11.5,11,11.8,11.9,11.2),ncol=2, nrow=4)
+colnames(sqrcutAttuneYG) <- c("SSC-H","BL1-H")
+polyGateAttuneYG <- polygonGate(.gate=sqrcutAttuneYG, filterId = "YG Beads")
+
+sqrcutFACSVerseYG <- matrix(c(11.2,11.2,12.2,12.2,8,9,10,8),ncol=2, nrow=4)
+colnames(sqrcutFACSVerseYG) <- c("SSC-H","FITC-H")
+polyGateFACSVerseYG <- polygonGate(.gate=sqrcutFACSVerseYG, filterId = "YG Beads")
+
+GatingsamplesAttuneYG <- as.character(unlist(mddf %>% 
+                                               dplyr::filter(Cytometer=="AttuneBRxx"&
+                                                Experiment=="YG"&
+                                                Dilution==1) %>% 
+                                  dplyr::select(Filename)))
+
+GatingsamplesFACSVerseYG <- as.character(unlist(mddf %>% 
+                                               dplyr::filter(Cytometer=="FACSVerse"&
+                                                Experiment=="YG"&
+                                                Dilution==1) %>% 
+                                  dplyr::select(Filename)))
+
+randoAttuneYG <- sampleNames(attuneYGbeads.trf[sample(1:length(attuneYGbeads.trf),6)])
+randoVerseYG <- sampleNames(VerseYGbeads.trf[sample(1:length(VerseYGbeads.trf),6)])
+
+gatechekR(GatingsamplesAttuneYG,attuneYGbeads.trf,polyGateAttuneYG)
+gatechekR(GatingsamplesAttuneYG,attuneYGbeads.trf.prv,polyGateAttuneYG)
+
+attuneYGbeads.trf.beads <- flowCore::Subset(attuneYGbeads.trf,
+                                         polyGateAttuneYG)
+attuneYGbeads.trf.prv.beads <- flowCore::Subset(attuneYGbeads.trf.prv,
+                                         polyGateAttuneYG)
+
+gatechekR(randoAttuneYG,attuneYGbeads.trf.beads,polyGateAttuneYG)
+
+gatechekR(GatingsamplesFACSVerseYG,VerseYGbeads.trf,polyGateFACSVerseYG)
+
+VerseYGbeads.trf.beads <- flowCore::Subset(VerseYGbeads.trf,
+                                           polyGateFACSVerseYG)
+
+gatechekR(GatingsamplesFACSVerseYG,VerseYGbeads.trf.beads,polyGateFACSVerseYG)
+```
+
+
+# Testing procedures
+
+## Test 1: Event removal by flowAI
+
+A first analysis performed is the use of flowAI, an automated anomaly detection
+software for flow cytometry (Monaco *et al.*, 2016).  
+Because of the way flowAI works, dilutions with less than 1000 events were not
+included in the automated quality check. 
+
+### YG Beads
+
+```{r YGflowAI, cache=TRUE, fig.cap=c("Box-and-whisker plot showing the total percentage of removed events")}
+param_Attune_YG <- c("SSC-H","FSC-H","BL1-H")
+attuneYGbeads.trf.beads.QC <- flowAIcallR(attuneYGbeads.trf.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG")
+attuneYGbeads.trf.beads.QC_DEC <- flowAIcallR(attuneYGbeads.trf.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG_decomp",
+                                          decomp = FALSE)
+attuneYGbeads.trf.beads.QC_UHR <- flowAIcallR(attuneYGbeads.trf.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG_UHR",
+                                          timesplit = 0.005)
+
+attuneYGbeads.trf.beads.QC_HR <- flowAIcallR(attuneYGbeads.trf.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG_HR",
+                                          timesplit = 0.01)
+
+attuneYGbeads.trf.beads.QC_LR <- flowAIcallR(attuneYGbeads.trf.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG_LR",
+                                          timesplit = 0.5)
+### Attune with prf flow AI calls YG -------------------------------------------
+attuneYGbeads.trf.beads.QC.prv <- flowAIcallR(attuneYGbeads.trf.prv.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG_preview",
+                                          minevents = 2e3L)
+
+attuneYGbeads.trf.beads.QC.prv_HR <- flowAIcallR(attuneYGbeads.trf.prv.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG_preview_HR",
+                                          minevents = 2e3L,
+                                          timesplit = 0.01)
+
+attuneYGbeads.trf.beads.QC.prv_UHR <- flowAIcallR(attuneYGbeads.trf.prv.beads,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYG_preview_UHR",
+                                          minevents = 2e3L,
+                                          timesplit = 0.005)
+### FACSVerse flow AI calls YG -------------------------------------------------
+VerseYGbeads.trf.beads.QC <- flowAIcallR(VerseYGbeads.trf.beads,
+                                          param=param_FACSVerse_YG,
+                                          experiment="FACSVerseYG")
+
+VerseYGbeads.trf.beads.QC_HR <- flowAIcallR(VerseYGbeads.trf.beads,
+                                          param=param_FACSVerse_YG,
+                                          experiment="FACSVerseYG_HR",
+                                          timesplit = 0.01)
+VerseYGbeads.trf.beads.QC_UHR <- flowAIcallR(VerseYGbeads.trf.beads,
+                                          param=param_FACSVerse_YG,
+                                          experiment="FACSVerseYG_UHR",
+                                          timesplit = 0.005)
+### Data wrangling attune ------------------------------------------------------
+eventsAttuneYGB4 <- fsApply(attuneYGbeads.trf.beads,function(x)nrow(x))
+eventsAttuneYGQC <- fsApply(attuneYGbeads.trf.beads.QC,function(x)nrow(x))
+eventsAttuneYGQC_DEQ <- fsApply(attuneYGbeads.trf.beads.QC_DEC,
+                                function(x)nrow(x))
+eventsAttuneYGQC_UHR <- fsApply(attuneYGbeads.trf.beads.QC_UHR,
+                                function(x)nrow(x))
+eventsAttuneYGQC_HR <- fsApply(attuneYGbeads.trf.beads.QC_HR,function(x)nrow(x))
+eventsAttuneYGQC_LR <- fsApply(attuneYGbeads.trf.beads.QC_LR,function(x)nrow(x))
+
+eventsAttuneYGQC.prv <- fsApply(attuneYGbeads.trf.beads.QC.prv,
+                                function(x)nrow(x))
+eventsAttuneYGQC.prv_HR <- fsApply(attuneYGbeads.trf.beads.QC.prv_HR,
+                                function(x)nrow(x))
+eventsAttuneYGQC.prv_UHR <- fsApply(attuneYGbeads.trf.beads.QC.prv_UHR,
+                                function(x)nrow(x))
+
+eventsAttuneYGB4.df <- data.frame(Filename=rownames(eventsAttuneYGB4),
+                                  events=eventsAttuneYGB4)
+eventsAttuneYGQC.df <- data.frame(Filename=rownames(eventsAttuneYGQC),
+                                  QCevents=eventsAttuneYGQC)
+eventsAttuneYGQC_DEQ.df     <-evtstodf(eventsAttuneYGQC_DEQ)
+eventsAttuneYGQC_UHR.df     <-evtstodf(eventsAttuneYGQC_UHR)
+eventsAttuneYGQC_HR.df      <-evtstodf(eventsAttuneYGQC_HR)
+eventsAttuneYGQC_LR.df      <-evtstodf(eventsAttuneYGQC_LR)
+eventsAttuneYGQC.prv.df     <-evtstodf(eventsAttuneYGQC.prv)
+eventsAttuneYGQC.prv_HR.df  <-evtstodf(eventsAttuneYGQC.prv_HR)
+eventsAttuneYGQC.prv_UHR.df <-evtstodf(eventsAttuneYGQC.prv_UHR)
+
+AttuneYGQCfilterinfo <- dplyr::inner_join(eventsAttuneYGB4.df,
+                                        eventsAttuneYGQC.df,by="Filename")
+AttuneYGQCfilterinfo$percentRemoved <- (1-AttuneQCfilterinfo$QCevents/
+                                          AttuneQCfilterinfo$events)*100
+flowAIattuneYGQCinfo <- data.table::fread("resultsQC_AttuneYG/QCmini.txt")
+AttuneYGQCfilterinfo$percentFRAnomalies <- flowAIattuneYGQCinfo$`% anomalies flow Rate`
+AttuneYGQCfilterinfo$percentSGAnomalies <- flowAIattuneYGQCinfo$`% anomalies Signal`
+AttuneYGQCfilterinfo$percentDRAnomalies <- flowAIattuneYGQCinfo$`% anomalies Margins`
+AttuneYGQCfilterinfo$method <- "default"
+
+AttuneYGQCfilterinfo_DEQ <- filterinfo(x=eventsAttuneYGQC_DEQ.df,
+                                       fAIfldr = "resultsQC_AttuneYG_decomp/",
+                                       mth = "decompFR_FALSE")
+AttuneYGQCfilterinfo_UHR <- filterinfo(x=eventsAttuneYGQC_UHR.df,
+                                       fAIfldr = "resultsQC_AttuneYG_UHR/",
+                                       mth = "UHR")   
+AttuneYGQCfilterinfo_HR <- filterinfo(x=eventsAttuneYGQC_HR.df,
+                                       fAIfldr = "resultsQC_AttuneYG_HR/",
+                                       mth = "HR")
+AttuneYGQCfilterinfo_LR <- filterinfo(x=eventsAttuneYGQC_LR.df,
+                                       fAIfldr = "resultsQC_AttuneYG_LR/",
+                                       mth = "LR")
+AttuneYGQCfilterinfo.prv<- filterinfo(x=eventsAttuneYGQC.prv.df,
+                                       fAIfldr = "resultsQC_AttuneYG_preview/",
+                                       mth = "Preview20s")
+AttuneYGQCfilterinfo.prv_HR <- filterinfo(x=eventsAttuneYGQC.prv_HR.df,
+                                       fAIfldr = "resultsQC_AttuneYG_preview_HR/",
+                                       mth = "Preview20sHR")
+AttuneYGQCfilterinfo.prv_UHR <- filterinfo(x=eventsAttuneYGQC.prv_UHR.df,
+                                       fAIfldr = "resultsQC_AttuneYG_preview_HR/",
+                                       mth = "Preview20sUHR")
+### Data wrangling FACSVerse YG ------------------------------------------------
+param_FACSVerse_YG <- c("SSC-H","FSC-H","FITC-H")
+
+eventsFACSVerseYGB4    <- fsApply(VerseYGbeads.trf.beads,function(x)nrow(x))
+eventsFACSVerseYGQC    <- fsApply(VerseYGbeads.trf.beads.QC,function(x)nrow(x))
+eventsFACSVerseYGQC_HR <- fsApply(VerseYGbeads.trf.beads.QC_HR,
+                                  function(x)nrow(x))
+eventsFACSVerseYGQC_UHR<- fsApply(VerseYGbeads.trf.beads.QC_UHR,
+                                  function(x)nrow(x))
+
+eventsFACSVerseYGB4.df <- data.frame(Filename=rownames(eventsFACSVerseYGB4),
+                                  events=eventsFACSVerseYGB4)
+eventsFACSVerseYGQC.df <- data.frame(Filename=rownames(eventsFACSVerseYGQC),
+                                  QCevents=eventsFACSVerseYGQC)
+eventsFACSVerseYGQC_HR.df <- evtstodf(eventsFACSVerseYGQC_HR)
+eventsFACSVerseYGGC_UHR.df<- evtstodf(eventsFACSVerseYGQC_UHR)
+
+
+FACSVerseYGQCfilterinfo <- dplyr::inner_join(eventsFACSVerseYGB4.df,
+                                        eventsFACSVerseYGQC.df,by="Filename")
+FACSVerseYGQCfilterinfo$percentRemoved <- (1-FACSVerseYGQCfilterinfo$QCevents/
+                                          FACSVerseYGQCfilterinfo$events)*100
+flowAIFACSVerseYGQCinfo <- data.table::fread("resultsQC_FACSVerseYG/QCmini.txt")
+FACSVerseYGQCfilterinfo$percentFRAnomalies <- flowAIFACSVerseYGQCinfo$`% anomalies flow Rate`
+FACSVerseYGQCfilterinfo$percentSGAnomalies <- flowAIFACSVerseYGQCinfo$`% anomalies Signal`
+FACSVerseYGQCfilterinfo$percentDRAnomalies <- flowAIFACSVerseYGQCinfo$`% anomalies Margins`
+FACSVerseYGQCfilterinfo$method <- "default"
+
+FACSVerseYGQCfilterinfo_HR <- filterinfo(x=eventsFACSVerseYGQC_HR.df,
+                                         joinw = eventsFACSVerseYGB4.df,
+                                         fAIfldr = "resultsQC_FACSVerseYG_HR/",
+                                         mth = "HR")
+
+FACSVerseYGQCfilterinfo_UHR <- filterinfo(x=eventsFACSVerseYGGC_UHR.df,
+                                         joinw = eventsFACSVerseYGB4.df,
+                                         fAIfldr = "resultsQC_FACSVerseYG_UHR/",
+                                         mth = "UHR")
+### Merge with metadata --------------------------------------------------------
+AttuneYGQCfilterinfo.meta   <- dplyr::inner_join(AttuneYGQCfilterinfo,mddf,
+                                                 by="Filename")
+FACSVerseYGQCfilterinfo.meta<- dplyr::inner_join(FACSVerseYGQCfilterinfo,mddf,
+                                                 by="Filename")
+
+
+YGfilterinfo.meta.all <- rbind(AttuneYGQCfilterinfo.meta,
+                               FACSVerseYGQCfilterinfo.meta)
+
+### Plotting -------------------------------------------------------------------
+plot.global <- YGfilterinfo.meta.all %>% ggplot(aes(x=as.factor(Dilution),
+                                                    y=percentRemoved,
+                                                    fill=Cytometer,
+                                                    color=Cytometer))
+plot.global + geom_point(position = position_dodge(width=0.5)) + 
+              geom_boxplot(alpha=0.6) + theme_bw() + 
+              scale_fill_brewer(palette="Dark2") + 
+              scale_color_brewer(palette="Dark2") +
+              xlab("Dillution") + 
+              ylab("% removed (higher is worse)")
+```
+
+
+## Test 2: distribution stability before and after presumed "gaps"
+
+### YG beads
+
+```{r YGtimegraphs}
+
+xyplot(`BL1-H`~Time,attuneYGbeads.trf[GatingsamplesAttuneYG],
+       scales=list(x=list(limits=c(0,60e3L))),nbin=2L^9)
 
 ```
 
 
-# Test 1: Event removal by flowAI
+## Test 3: volumetric accuracy
 
+The only "golden truth" check here are the TruCount beads, but congruence on the
+other datasets is evaluated as well.
 
-# Test 2: distribution stability before and after presumed "gaps"
+### YG Beads
 
-# Test 3: volumetric accuracy
+# References
+
+- Monaco,G. et al. (2016) flowAI: automatic and interactive anomaly discerning tools for flow cytometry data.
+Bioinformatics. 2016 Aug 15;32(16):2473-80.
