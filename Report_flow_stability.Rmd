@@ -450,7 +450,7 @@ attuneYGbeads.trf.beads.QC_LR <- flowAIcallR(attuneYGbeads.trf.beads,
                                           param=param_Attune_YG,
                                           experiment="AttuneYG_LR",
                                           timesplit = 0.5)
-### Attune with prf flow AI calls YG -------------------------------------------
+### Attune with prv flow AI calls YG -------------------------------------------
 attuneYGbeads.trf.beads.QC.prv <- flowAIcallR(attuneYGbeads.trf.prv.beads,
                                           param=param_Attune_YG,
                                           experiment="AttuneYG_preview",
@@ -481,14 +481,17 @@ VerseYGbeads.trf.beads.QC_UHR <- flowAIcallR(VerseYGbeads.trf.beads,
                                           experiment="FACSVerseYG_UHR",
                                           timesplit = 0.005)
 ### Data wrangling attune ------------------------------------------------------
-eventsAttuneYGB4 <- fsApply(attuneYGbeads.trf.beads,function(x)nrow(x))
-eventsAttuneYGQC <- fsApply(attuneYGbeads.trf.beads.QC,function(x)nrow(x))
+eventsAttuneYGB4     <- fsApply(attuneYGbeads.trf.beads,function(x)nrow(x))
+evetnsAttuneYGB4prf  <- fsApply(attuneYGbeads.trf.prv.beads,function(x)nrow(x))
+eventsAttuneYGQC     <- fsApply(attuneYGbeads.trf.beads.QC,function(x)nrow(x))
 eventsAttuneYGQC_DEQ <- fsApply(attuneYGbeads.trf.beads.QC_DEC,
                                 function(x)nrow(x))
 eventsAttuneYGQC_UHR <- fsApply(attuneYGbeads.trf.beads.QC_UHR,
                                 function(x)nrow(x))
-eventsAttuneYGQC_HR <- fsApply(attuneYGbeads.trf.beads.QC_HR,function(x)nrow(x))
-eventsAttuneYGQC_LR <- fsApply(attuneYGbeads.trf.beads.QC_LR,function(x)nrow(x))
+eventsAttuneYGQC_HR  <- fsApply(attuneYGbeads.trf.beads.QC_HR,
+                                function(x)nrow(x))
+eventsAttuneYGQC_LR  <- fsApply(attuneYGbeads.trf.beads.QC_LR,
+                                function(x)nrow(x))
 
 eventsAttuneYGQC.prv <- fsApply(attuneYGbeads.trf.beads.QC.prv,
                                 function(x)nrow(x))
@@ -505,9 +508,11 @@ eventsAttuneYGQC_DEQ.df     <-evtstodf(eventsAttuneYGQC_DEQ)
 eventsAttuneYGQC_UHR.df     <-evtstodf(eventsAttuneYGQC_UHR)
 eventsAttuneYGQC_HR.df      <-evtstodf(eventsAttuneYGQC_HR)
 eventsAttuneYGQC_LR.df      <-evtstodf(eventsAttuneYGQC_LR)
+eventsAttuneYGB4.prv.df     <-evtstodf(evetnsAttuneYGB4prf)
 eventsAttuneYGQC.prv.df     <-evtstodf(eventsAttuneYGQC.prv)
 eventsAttuneYGQC.prv_HR.df  <-evtstodf(eventsAttuneYGQC.prv_HR)
 eventsAttuneYGQC.prv_UHR.df <-evtstodf(eventsAttuneYGQC.prv_UHR)
+names(eventsAttuneYGB4.prv.df)[2]<-"events"
 
 AttuneYGQCfilterinfo <- dplyr::inner_join(eventsAttuneYGB4.df,
                                         eventsAttuneYGQC.df,by="Filename")
@@ -532,12 +537,15 @@ AttuneYGQCfilterinfo_LR <- filterinfo(x=eventsAttuneYGQC_LR.df,
                                        fAIfldr = "resultsQC_AttuneYG_LR/",
                                        mth = "LR")
 AttuneYGQCfilterinfo.prv<- filterinfo(x=eventsAttuneYGQC.prv.df,
+                                      joinw = eventsAttuneYGB4.prv.df,
                                        fAIfldr = "resultsQC_AttuneYG_preview/",
                                        mth = "Preview20s")
 AttuneYGQCfilterinfo.prv_HR <- filterinfo(x=eventsAttuneYGQC.prv_HR.df,
+                                      joinw = eventsAttuneYGB4.prv.df,
                                        fAIfldr = "resultsQC_AttuneYG_preview_HR/",
                                        mth = "Preview20sHR")
 AttuneYGQCfilterinfo.prv_UHR <- filterinfo(x=eventsAttuneYGQC.prv_UHR.df,
+                                      joinw = eventsAttuneYGB4.prv.df,
                                        fAIfldr = "resultsQC_AttuneYG_preview_HR/",
                                        mth = "Preview20sUHR")
 ### Data wrangling FACSVerse YG ------------------------------------------------
@@ -578,22 +586,52 @@ FACSVerseYGQCfilterinfo_UHR <- filterinfo(x=eventsFACSVerseYGGC_UHR.df,
                                          fAIfldr = "resultsQC_FACSVerseYG_UHR/",
                                          mth = "UHR")
 ### Merge with metadata --------------------------------------------------------
-AttuneYGQCfilterinfo.meta   <- dplyr::inner_join(AttuneYGQCfilterinfo,mddf,
-                                                 by="Filename")
-FACSVerseYGQCfilterinfo.meta<- dplyr::inner_join(FACSVerseYGQCfilterinfo,mddf,
-                                                 by="Filename")
+AttuneYGQCfilterinfo.meta        <- dplyr::inner_join(AttuneYGQCfilterinfo,mddf,
+                                                      by="Filename")
+AttuneYGQCfilterinfo_DEQ.meta    <- dplyr::inner_join(AttuneYGQCfilterinfo_DEQ,
+                                                      mddf,by="Filename")
+AttuneYGQCfilterinfo_HR.meta     <- dplyr::inner_join(AttuneYGQCfilterinfo_HR,
+                                                      mddf,by="Filename")
+AttuneYGQCfilterinfo_LR.meta     <- dplyr::inner_join(AttuneYGQCfilterinfo_LR,
+                                                      mddf,by="Filename")
+AttuneYGQCfilterinfo_UHR.meta    <- dplyr::inner_join(AttuneYGQCfilterinfo_UHR,
+                                                      mddf,by="Filename")
+AttuneYGQCfilterinfo.prv.meta    <- dplyr::inner_join(AttuneYGQCfilterinfo.prv,
+                                                      mddf,by="Filename")
+AttuneYGQCfilterinfo.prv_HR.meta <- dplyr::inner_join(AttuneYGQCfilterinfo.prv_HR,
+                                                      mddf,by="Filename")
+AttuneYGQCfilterinfo.prv_UHR.meta<- dplyr::inner_join(AttuneYGQCfilterinfo.prv_UHR,
+                                                      mddf,by="Filename")
+
+FACSVerseYGQCfilterinfo.meta    <- dplyr::inner_join(FACSVerseYGQCfilterinfo,
+                                                     mddf, by="Filename")
+
+FACSVerseYGQCfilterinfo_HR.meta <- dplyr::inner_join(FACSVerseYGQCfilterinfo_HR,
+                                                     mddf, by="Filename")
+FACSVerseYGQCfilterinfo_UHR.meta<- dplyr::inner_join(FACSVerseYGQCfilterinfo_UHR,
+                                                     mddf, by="Filename")
 
 
 YGfilterinfo.meta.all <- rbind(AttuneYGQCfilterinfo.meta,
-                               FACSVerseYGQCfilterinfo.meta)
+                               AttuneYGQCfilterinfo_DEQ.meta,
+                               AttuneYGQCfilterinfo_HR.meta,
+                               AttuneYGQCfilterinfo_LR.meta,
+                               AttuneYGQCfilterinfo_UHR.meta,
+                               AttuneYGQCfilterinfo.prv.meta,
+                               AttuneYGQCfilterinfo.prv_HR.meta,
+                               AttuneYGQCfilterinfo.prv_UHR.meta,
+                               FACSVerseYGQCfilterinfo.meta,
+                               FACSVerseYGQCfilterinfo_HR.meta,
+                               FACSVerseYGQCfilterinfo_UHR.meta)
 
 ### Plotting -------------------------------------------------------------------
-plot.global <- YGfilterinfo.meta.all %>% ggplot(aes(x=as.factor(Dilution),
-                                                    y=percentRemoved,
-                                                    fill=Cytometer,
-                                                    color=Cytometer))
+plot.global <- YGfilterinfo.meta.all %>% dplyr::filter(method!="LR") %>% 
+                ggplot(aes(x=as.factor(method),y=percentRemoved,
+                           fill=Cytometer,color=Cytometer))
 plot.global + geom_point(position = position_dodge(width=0.5)) + 
-              geom_boxplot(alpha=0.6) + theme_bw() + 
+              geom_boxplot(alpha=0.6) +
+              facet_grid(~Dilution)+ theme_bw() +
+              theme(axis.text.x = element_text(angle=270,hjust = 0))+
               scale_fill_brewer(palette="Dark2") + 
               scale_color_brewer(palette="Dark2") +
               xlab("Dillution") + 
