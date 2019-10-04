@@ -636,6 +636,36 @@ plot.global + geom_point(position = position_dodge(width=0.5)) +
               scale_color_brewer(palette="Dark2") +
               xlab("Dillution") + 
               ylab("% removed (higher is worse)")
+
+
+plot.relevant <- YGfilterinfo.meta.all %>% dplyr::filter(method!="LR"&
+                                                         method!="decompFR_FALSE"&
+                                                         method!="default"&
+                                                         method!="Preview20s") %>% 
+                ggplot(aes(x=as.factor(method),y=percentRemoved,
+                           fill=Cytometer,color=Cytometer))
+
+plot.relevant + geom_point(position = position_dodge(width=0.5)) + 
+              geom_boxplot(alpha=0.6) +
+              facet_grid(~Dilution)+ theme_bw() +
+              theme(axis.text.x = element_text(angle=270,hjust = 0))+
+              scale_fill_brewer(palette="Dark2") + 
+              scale_color_brewer(palette="Dark2") +
+              xlab("Dillution") + 
+              ylab("% removed (higher is worse)")
+
+
+plot.DRA <- YGfilterinfo.meta.all %>% dplyr::filter(method!="LR") %>% 
+                ggplot(aes(x=as.factor(method),y=percentDRAnomalies,
+                           fill=Cytometer,color=Cytometer))
+plot.DRA + geom_point(position = position_dodge(width=0.5)) + 
+              geom_boxplot(alpha=0.6) +
+              facet_grid(~Dilution)+ theme_bw() +
+              theme(axis.text.x = element_text(angle=270,hjust = 0))+
+              scale_fill_brewer(palette="Dark2") + 
+              scale_color_brewer(palette="Dark2") +
+              xlab("Dillution") + 
+              ylab("% dynamic range anomalies (higher is worse)")
 ```
 
 
