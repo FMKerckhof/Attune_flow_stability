@@ -44,3 +44,7 @@ rsconnect/
 
 # Output from flowAI (except for text report)
 *.html
+resultsQC_*
+resqc/
+# Intermediary binary data files
+*.Rda

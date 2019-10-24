@@ -40,6 +40,8 @@ library(flowViz)   # graph cytometry data
 library(readxl)    # read from excel
 library(openxlsx)  # write to excel
 library(tidyverse) # data wrangling
+library(EnvStats)  # GOF testing
+library(cramer)    # CVM testing
 # custom functions -------------------------------------------------------------
 gatechekR <- function(samples,flowset,gatetemplate,plot_treshold=1e3L){
   # Based on an original script by Ruben Props
@@ -143,8 +145,98 @@ filterinfo <- function(x=eventsAttuneYGQC.df,
   FIdf$method <- mth
   return(FIdf)
 }
+flow_rate_bin2 <- function(x, second_fraction = 0.1, timeCh = "Time",
+  timestep = timestep){
+  # adapted from flowAI source code (https://github.com/SamGG/flowAI/blob/master/R/flow-rate.R)
+  xx <- exprs(x)[, timeCh]
+  idx <- c(1:nrow(x))
+
+  endsec <- ceiling(timestep * max(xx))  # total seconds of the experiment
+
+  lenx <- length(xx)  # num of time ticks
+
+  tbins <- seq(0, endsec/timestep, by = as.numeric(second_fraction)/timestep)  # time bins
+  secbin <- seq(0, endsec, by = as.numeric(second_fraction))  # bin expressed in seconds
+  minbin <- round(secbin/60, 3)  # bin expressed in minutes
+  nrBins <- length(tbins) - 1
+  tbCounts <- c(0, hist(xx, tbins, plot = FALSE)$counts)  # number of events per time bin
+  expEv <- lenx/(nrBins)  ##median(tbCounts) # expected number of events per bin
+  binID <- do.call(c, mapply(rep, x = 1:length(tbCounts), times = tbCounts,
+    SIMPLIFY = FALSE))
+
+  if (length(idx) != length(binID))
+    stop("length of cell ID not equal length of bin ID")
+
+  timeFlowData <- list(frequencies = cbind(tbins, minbin, secbin, tbCounts),
+                       cellBinID = data.frame(cellID = idx, binID = binID),
+                       info = data.frame(second_fraction = second_fraction,
+                       expFrequency = expEv, bins = nrBins))
+  return(timeFlowData)
+}
+
+flow_rate_check2 <- function(x, FlowRateData, alpha = alpha, use_decomp = use_decomp) {
+    
+  fr_frequences <- FlowRateData$frequencies
+  fr_cellBinID <- FlowRateData$cellBinID
+  second_fraction <- FlowRateData$info["second_fraction"]
+  fr_autoqc <- NULL
+
+  # if (length(unique(fr_frequences[, 2])) == 1) {
+  #   
+  # } else {
+  #   fr_autoqc <- anomaly_detection(fr_frequences[, "tbCounts"], alpha = alpha, use_decomp = use_decomp)
+  # }
+
+  if (is.null(fr_autoqc) || is.null(fr_autoqc$anoms)) {
+    badPerc <- 0
+    newx <- x
+    goodCellIDs <- fr_cellBinID$cellID
+    badCellIDs <- NULL
+  } else {
+    goodCellIDs <- fr_cellBinID$cellID[!(fr_cellBinID$binID %in% fr_autoqc$anoms$index)]
+    badCellIDs <- setdiff(fr_cellBinID$cellID, goodCellIDs)
+    badPerc <- round(1 - (length(goodCellIDs)/nrow(fr_cellBinID)), 4)
+    params <- parameters(x)
+    keyval <- keyword(x)
+    sub_exprs <- exprs(x)
+    sub_exprs <- sub_exprs[goodCellIDs, ]
+    newx <- flowFrame(exprs = sub_exprs, parameters = params, description = keyval)
+  }
+  # cat(paste0(100 * badPerc, "% of anomalous cells detected in the flow rate check. \n"))
+  return(list(anoms = fr_autoqc$anoms, frequencies = fr_frequences,
+              FRnewFCS = newx,
+              goodCellIDs = goodCellIDs, badCellIDs = badCellIDs,
+              res_fr_QC = data.frame(second_fraction = second_fraction,
+              num_obs = fr_autoqc$num_obs, badPerc = badPerc)))
+}
+
+flow_rate_plot2 <- function(FlowRateQC) {
+  #using input from flow_rate_bin2
+  second_fraction <- FlowRateQC$info["second_fraction"]
+  num_obs = FlowRateQC$res_fr_QC$num_obs
+  frequencies = as.data.frame(FlowRateQC$frequencies)
+  anoms = as.data.frame(FlowRateQC$anoms)
+  anoms_points = as.data.frame(cbind(sec_anom = frequencies$secbin[anoms$index], count_anom = anoms$anoms))
+
+
+    xgraph <- ggplot(frequencies, aes_string(x="secbin", y="tbCounts")) +
+              theme_bw() + theme(panel.grid.major = element_blank(),
+              panel.grid.minor = element_blank(),
+              text=element_text(size = 14)) + geom_line(colour = "red" )
+    xgraph <- xgraph + labs(x= "Seconds", y= paste0("Number of events per 1/",
+              1  /second_fraction, " of a second"), title= "Flow Rate")
+
+  # Add anoms to the plot as circles.
+    if(!is.null(anoms_points)){
+      xgraph <- xgraph + geom_point(data=anoms_points, aes_string(x= "sec_anom", y= "count_anom"), color = "green4", size = 3, shape = 1)
+    }
+
+    return(xgraph)
+}
 # load flowSets ----------------------------------------------------------------
 attuneYGbeads <- flowCore::read.flowSet(path="Data/Attune_BRXX/1um_YG_dils/",
+                                        pattern = "*.fcs",emptyValue = FALSE)
+attuneYGBVbeads <- flowCore::read.flowSet(path="Data/Attune_BVxx/YG_beads/",
                                         pattern = "*.fcs",emptyValue = FALSE)
 VerseYGbeads  <- flowCore::read.flowSet(path="Data/FACSVerse/1um_YG_beads/",
                                         pattern = "*.fcs",emptyValue = FALSE)
@@ -178,6 +270,10 @@ VerseTWEV  <- flowCore::read.flowSet(path="Data/FACSVerse/Tapwater_EvianMedium/"
 attuneYGnames <- sampleNames(attuneYGbeads)
 attuneYGevs   <- fsApply(attuneYGbeads,function(x)nrow(x))
 attuneYGdf    <- data.frame(Filename=attuneYGnames,Events=attuneYGevs)
+
+attuneYGBVnames <- sampleNames(attuneYGBVbeads)
+attuneYGBVevs   <- fsApply(attuneYGBVbeads,function(x)nrow(x))
+attuneYGBVdf    <- data.frame(Filename=attuneYGBVnames,Events=attuneYGBVevs)
 
 FACSVerseYGnames <- sampleNames(VerseYGbeads)
 FACSVerseYGevs   <- fsApply(VerseYGbeads,function(x)nrow(x))
@@ -230,7 +326,8 @@ FACSVerseTWEVdf    <- data.frame(Filename=FACSVerseTWEVnames,
                                    Events=FACSVerseTWEVevs)
 
 # write out metadata template --------------------------------------------------
-openxlsx::write.xlsx(list(AttuneYG=attuneYGdf,FACSVerseYG=FACSVerseYGdf,
+openxlsx::write.xlsx(list(AttuneYG=attuneYGdf,AttuneYGBV=attuneYGBVdf,
+                          FACSVerseYG=FACSVerseYGdf,
                           Attune8pk=attune8pkdf,FACSVerse8pk=FACSVerse8pkdf,
                           AttuneTC=attuneTCkdf,FACSVerseTC=FACSVerseTCkdf,
                           AttuneRV=attuneRamVibdf,FACSVerseRV=FACSVerseRamVibdf,
@@ -262,6 +359,8 @@ TruCount dilutions | In-plate dilution of Becton-Dickinson TruCount (cat. 340334
 VibrioRamlibacter | In-plate dilution of axenic *Vibrio campbelii* in 0.20 µm-filtered instant ocean and *Ramlibacter aquaticus* in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
 Tapwater_PBSmedium | In-plate dilution of different tap-waters from the lab in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
 Tapwater_Evianmedium | In-plate dilution of different tap-waters from the lab in 0.20µm-filtered PBS (Sigma) using multi-channel micropipettes
+
+The 1µm YG beads were analyzed on the Attune BVxx as well. 
 
 # Materials & Methods
 
@@ -305,6 +404,10 @@ FACSVerse.
 attuneYGbeads.trf <- transform(attuneYGbeads,`FSC-H`=asinh(`FSC-H`),
                                `SSC-H`=asinh(`SSC-H`),
                                `BL1-H`=asinh(`BL1-H`))
+attuneYGBVbeads.trf <- transform(attuneYGBVbeads,`FSC-H`=asinh(`FSC-H`),
+                               `SSC-H`=asinh(`SSC-H`),
+                               `BL1-H`=asinh(`BL1-H`))
+
 VerseYGbeads.trf <- transform(VerseYGbeads,`FSC-H`=asinh(`FSC-H`),
                                `SSC-H`=asinh(`SSC-H`),
                                `FITC-H`=asinh(`FITC-H`),
@@ -314,11 +417,15 @@ rectGateAttuneTime <- rectangleGate("Time"=c(20e3L,Inf),
                                     filterId = "TimeGateAttune")
 
 attuneYGbeads.trf.prv <- Subset(attuneYGbeads.trf,rectGateAttuneTime)
-
+attuneYGBVbeads.trf.prv <- Subset(attuneYGBVbeads.trf,rectGateAttuneTime)
 
 sqrcutAttuneYG <- matrix(c(10.5,11,12,11.5,11,11.8,11.9,11.2),ncol=2, nrow=4)
 colnames(sqrcutAttuneYG) <- c("SSC-H","BL1-H")
 polyGateAttuneYG <- polygonGate(.gate=sqrcutAttuneYG, filterId = "YG Beads")
+
+sqrcutAttuneYGBV <- matrix(c(10,10.5,11,10.8,11.8,12.5,12.1,11.8),ncol=2, nrow=4)
+colnames(sqrcutAttuneYGBV) <- c("SSC-H","BL1-H")
+polyGateAttuneYGBV <- polygonGate(.gate=sqrcutAttuneYGBV, filterId = "YG Beads")
 
 sqrcutFACSVerseYG <- matrix(c(11.2,11.2,12.2,12.2,8,9,10,8),ncol=2, nrow=4)
 colnames(sqrcutFACSVerseYG) <- c("SSC-H","FITC-H")
@@ -330,16 +437,25 @@ GatingsamplesAttuneYG <- as.character(unlist(mddf %>%
                                                 Dilution==1) %>% 
                                   dplyr::select(Filename)))
 
+GatingsamplesAttuneYGBV <- as.character(unlist(mddf %>% 
+                                               dplyr::filter(Cytometer=="AttuneBVxx"&
+                                                Experiment=="YG"&
+                                                Dilution==1) %>% 
+                                  dplyr::select(Filename)))
+
+
 GatingsamplesFACSVerseYG <- as.character(unlist(mddf %>% 
                                                dplyr::filter(Cytometer=="FACSVerse"&
                                                 Experiment=="YG"&
                                                 Dilution==1) %>% 
                                   dplyr::select(Filename)))
 
-randoAttuneYG <- sampleNames(attuneYGbeads.trf[sample(1:length(attuneYGbeads.trf),6)])
-randoVerseYG <- sampleNames(VerseYGbeads.trf[sample(1:length(VerseYGbeads.trf),6)])
+randoAttuneYG   <- sampleNames(attuneYGbeads.trf[sample(1:length(attuneYGbeads.trf),6)])
+randoAttuneYGBV <- sampleNames(attuneYGBVbeads.trf[sample(1:length(attuneYGBVbeads.trf),6)])
+randoVerseYG    <- sampleNames(VerseYGbeads.trf[sample(1:length(VerseYGbeads.trf),6)])
 
 gatechekR(GatingsamplesAttuneYG,attuneYGbeads.trf,polyGateAttuneYG)
+gatechekR(GatingsamplesAttuneYGBV,attuneYGBVbeads.trf,polyGateAttuneYGBV)
 gatechekR(GatingsamplesAttuneYG,attuneYGbeads.trf.prv,polyGateAttuneYG)
 
 attuneYGbeads.trf.beads <- flowCore::Subset(attuneYGbeads.trf,
@@ -347,7 +463,13 @@ attuneYGbeads.trf.beads <- flowCore::Subset(attuneYGbeads.trf,
 attuneYGbeads.trf.prv.beads <- flowCore::Subset(attuneYGbeads.trf.prv,
                                          polyGateAttuneYG)
 
+attuneYGBVbeads.trf.beads <- flowCore::Subset(attuneYGBVbeads.trf,
+                                         polyGateAttuneYGBV)
+attuneYGBVbeads.trf.prv.beads <- flowCore::Subset(attuneYGbeads.trf.prv,
+                                         polyGateAttuneYG)
+
 gatechekR(randoAttuneYG,attuneYGbeads.trf.beads,polyGateAttuneYG)
+gatechekR(randoAttuneYGBV,attuneYGBVbeads.trf.beads,polyGateAttuneYGBV)
 
 gatechekR(GatingsamplesFACSVerseYG,VerseYGbeads.trf,polyGateFACSVerseYG)
 
@@ -427,8 +549,14 @@ included in the automated quality check.
 
 ### YG Beads
 
-```{r YGflowAI, cache=TRUE, fig.cap=c("Box-and-whisker plot showing the total percentage of removed events")}
+Below first a general plot is shown with multiple different parametrizations of
+flowAI. This was needed, because the large fluctuations in the attune flow 
+stability cannot be readily picked up by the flowAI ESD (although they are 
+problematic, personal communication with flowAI developer, dr. Gianni Monaco)
+
+```{r YGflowAI, cache=TRUE, fig.cap=c("Box-and-whisker plot showing the total percentage of removed events, with different settings of flowAI, stained by Cytometer","Box-and-whisker plot showing the total percentage of removed events, with a set of relevant settings of flowAI, stained by Cytometer","Box-and-whiskerplot of percentage of dynamic range anomalies, stained by Cytometer")}
 param_Attune_YG <- c("SSC-H","FSC-H","BL1-H")
+### Atune BRxx -----------------------------------------------------------------
 attuneYGbeads.trf.beads.QC <- flowAIcallR(attuneYGbeads.trf.beads,
                                           param=param_Attune_YG,
                                           experiment="AttuneYG")
@@ -450,7 +578,7 @@ attuneYGbeads.trf.beads.QC_LR <- flowAIcallR(attuneYGbeads.trf.beads,
                                           param=param_Attune_YG,
                                           experiment="AttuneYG_LR",
                                           timesplit = 0.5)
-### Attune with prv flow AI calls YG -------------------------------------------
+### Attune BRxx with prv flow AI calls YG --------------------------------------
 attuneYGbeads.trf.beads.QC.prv <- flowAIcallR(attuneYGbeads.trf.prv.beads,
                                           param=param_Attune_YG,
                                           experiment="AttuneYG_preview",
@@ -465,6 +593,51 @@ attuneYGbeads.trf.beads.QC.prv_HR <- flowAIcallR(attuneYGbeads.trf.prv.beads,
 attuneYGbeads.trf.beads.QC.prv_UHR <- flowAIcallR(attuneYGbeads.trf.prv.beads,
                                           param=param_Attune_YG,
                                           experiment="AttuneYG_preview_UHR",
+                                          minevents = 2e3L,
+                                          timesplit = 0.005)
+### Atune BVxx -----------------------------------------------------------------
+#save(attuneYGBVbeads.trf.beads,file="AttuneYGBVxxbeads.Rda")
+attuneYGBVbeads.trf.beadsevts <- fsApply(attuneYGBVbeads.trf.beads,function(x){nrow(x)})
+
+attuneYGBVbeads.trf.beads.enough <- attuneYGBVbeads.trf.beads[attuneYGBVbeads.trf.beadsevts>1.5e3L]
+
+attuneYGBVbeads.trf.beads.QC <- flowAIcallR(attuneYGBVbeads.trf.beads.enough,
+                                          param=param_Attune_YG,
+                                          experiment="AttuneYGBV")
+# below was run in Attune_BVxx_DEQfAI.R
+# attuneYGBVbeads.trf.beads.QC_DEC <- flowAIcallR(attuneYGBVbeads.trf.beads,
+#                                           param=param_Attune_YG,
+#                                           experiment="AttuneYGBV_decomp",
+#                                           decomp = FALSE)
+attuneYGBVbeads.trf.beads.QC_UHR <- flowAIcallR(attuneYGBVbeads.trf.beads,
+                                          param=param_Attune_YGBV,
+                                          experiment="AttuneYGBV_UHR",
+                                          timesplit = 0.005)
+
+attuneYGBVbeads.trf.beads.QC_HR <- flowAIcallR(attuneYGBVbeads.trf.beads,
+                                          param=param_Attune_YGBV,
+                                          experiment="AttuneYGBV_HR",
+                                          timesplit = 0.01)
+
+attuneYGBVbeads.trf.beads.QC_LR <- flowAIcallR(attuneYGBVbeads.trf.beads,
+                                          param=param_Attune_YGBV,
+                                          experiment="AttuneYGBV_LR",
+                                          timesplit = 0.5)
+### Attune BVxx with prv flow AI calls YGBV --------------------------------------
+attuneYGBVbeads.trf.beads.QC.prv <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+                                          param=param_Attune_YGBV,
+                                          experiment="AttuneYGBV_preview",
+                                          minevents = 2e3L)
+
+attuneYGBVbeads.trf.beads.QC.prv_HR <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+                                          param=param_Attune_YGBV,
+                                          experiment="AttuneYGBV_preview_HR",
+                                          minevents = 2e3L,
+                                          timesplit = 0.01)
+
+attuneYGBVbeads.trf.beads.QC.prv_UHR <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+                                          param=param_Attune_YGBV,
+                                          experiment="AttuneYGBV_preview_UHR",
                                           minevents = 2e3L,
                                           timesplit = 0.005)
 ### FACSVerse flow AI calls YG -------------------------------------------------
@@ -630,7 +803,7 @@ plot.global <- YGfilterinfo.meta.all %>% dplyr::filter(method!="LR") %>%
                            fill=Cytometer,color=Cytometer))
 plot.global + geom_point(position = position_dodge(width=0.5)) + 
               geom_boxplot(alpha=0.6) +
-              facet_grid(~Dilution)+ theme_bw() +
+              facet_grid(~Dilution)+ theme_bw(base_size = 20) +
               theme(axis.text.x = element_text(angle=270,hjust = 0))+
               scale_fill_brewer(palette="Dark2") + 
               scale_color_brewer(palette="Dark2") +
@@ -647,7 +820,7 @@ plot.relevant <- YGfilterinfo.meta.all %>% dplyr::filter(method!="LR"&
 
 plot.relevant + geom_point(position = position_dodge(width=0.5)) + 
               geom_boxplot(alpha=0.6) +
-              facet_grid(~Dilution)+ theme_bw() +
+              facet_grid(~Dilution)+ theme_bw(base_size=20) +
               theme(axis.text.x = element_text(angle=270,hjust = 0))+
               scale_fill_brewer(palette="Dark2") + 
               scale_color_brewer(palette="Dark2") +
@@ -660,7 +833,7 @@ plot.DRA <- YGfilterinfo.meta.all %>% dplyr::filter(method!="LR") %>%
                            fill=Cytometer,color=Cytometer))
 plot.DRA + geom_point(position = position_dodge(width=0.5)) + 
               geom_boxplot(alpha=0.6) +
-              facet_grid(~Dilution)+ theme_bw() +
+              facet_grid(~Dilution)+ theme_bw(base_size=20) +
               theme(axis.text.x = element_text(angle=270,hjust = 0))+
               scale_fill_brewer(palette="Dark2") + 
               scale_color_brewer(palette="Dark2") +
@@ -673,12 +846,307 @@ plot.DRA + geom_point(position = position_dodge(width=0.5)) +
 
 ### YG beads
 
-```{r YGtimegraphs}
+First, to get an idea of the temporal variability in flowrates, the events were 
+binned into sub-second time-bins. It becomes clear that diluter no. 4 of the 
+liquid handler needed recalibration (replicates D & H), and that the Attune BRxx
+is mainly showing instability at the lower dilutions, although it is hard to tell
+since event rates get very low at 1000-fold dilutions. 
 
-xyplot(`BL1-H`~Time,attuneYGbeads.trf[GatingsamplesAttuneYG],
-       scales=list(x=list(limits=c(0,60e3L))),nbin=2L^9)
+```{r YGtimegraphs, cache=TRUE, fig.cap=c("Flow rate binning at 1/10 of a second","Flow rate binning at 1/10 of a second with 20s preview for Attune","Flow rate binning at 1/100 of a second","Flow rate binning at 1/100 of a second with 20s preview for Attune")}
+# Extract timesteps (same for both) --------------------------------------------
+attunetimestep <- as.numeric(attuneYGbeads.trf[[1]]@description$`$TIMESTEP`)
+facsversetimestep <- as.numeric(VerseYGbeads.trf[[1]]@description$`$TIMESTEP`)
+# Bin event rates --------------------------------------------------------------
+attunefrbins <- fsApply(attuneYGbeads.trf.beads,
+                        function(x)flow_rate_bin2(x,second_fraction = 0.1,
+                                                 timestep = attunetimestep))
+attunefrbins.prv <- fsApply(attuneYGbeads.trf.prv.beads,
+                        function(x)flow_rate_bin2(x,second_fraction = 0.1,
+                                                 timestep = attunetimestep))
+facsversefrbins <- fsApply(VerseYGbeads.trf.beads,
+                        function(x)flow_rate_bin2(x,second_fraction = 0.1,
+                                                 timestep = facsversetimestep))
+attunefrbinsHR <- fsApply(attuneYGbeads.trf,
+                        function(x)flow_rate_bin2(x,second_fraction = 0.01,
+                                                 timestep = attunetimestep))
+attunefrbins.prv.HR <- fsApply(attuneYGbeads.trf.prv.beads,
+                        function(x)flow_rate_bin2(x,second_fraction = 0.01,
+                                                 timestep = attunetimestep))
+facsversefrbins.HR <- fsApply(VerseYGbeads.trf.beads,
+                        function(x)flow_rate_bin2(x,second_fraction = 0.01,
+                                                 timestep = facsversetimestep))
+# Bind into dataframes 1/10s   -------------------------------------------------
+attunefrlist <- lapply(seq_along(attunefrbins),
+                       function(i){data.frame(attunefrbins[[i]]$frequencies,
+                                              Filename=names(attunefrbins)[i])})
+attunefrdf <- do.call(rbind,attunefrlist)
+
+attunefrlist.prv <- lapply(seq_along(attunefrbins.prv),
+                       function(i){data.frame(attunefrbins.prv[[i]]$frequencies,
+                                              Filename=names(attunefrbins.prv)[i])})
+attunefrdf.prv <- do.call(rbind,attunefrlist.prv)
+
+facsversefrlist <- lapply(seq_along(facsversefrbins),
+                          function(i){data.frame(facsversefrbins[[i]]$frequencies,
+                                                 Filename=names(facsversefrbins)[i])})
+facsversefrdf <- do.call(rbind,facsversefrlist)
+# Bind into dataframes 1/100s --------------------------------------------------
+attunefrlist.HR <- lapply(seq_along(attunefrbinsHR),
+                       function(i){data.frame(attunefrbinsHR[[i]]$frequencies,
+                                            Filename=names(attunefrbinsHR)[i])})
+attunefrdf.HR <- do.call(rbind,attunefrlist.HR)
+
+attunefrlist.prv.HR <- lapply(seq_along(attunefrbins.prv.HR),
+                       function(i){data.frame(attunefrbins.prv.HR[[i]]$frequencies,
+                                        Filename=names(attunefrbins.prv.HR)[i])})
+attunefrdf.prv.HR <- do.call(rbind,attunefrlist.prv.HR)
+
+facsversefrlist.HR <- lapply(seq_along(facsversefrbins.HR),
+                          function(i){data.frame(facsversefrbins.HR[[i]]$frequencies,
+                                                 Filename=names(facsversefrbins.HR)[i])})
+facsversefrdf.HR <- do.call(rbind,facsversefrlist.HR)
+
+# Join together into plotting dataframes  --------------------------------------
+
+frYGdf <- rbind(attunefrdf,facsversefrdf)
+frYGdf.prv <- rbind(attunefrdf.prv,facsversefrdf)
+frYGdf.HR <- rbind(attunefrdf.HR,facsversefrdf.HR)
+frYGdf.prv.HR <- rbind(attunefrdf.prv.HR,facsversefrdf.HR)
+
+YGfrdf.meta <- dplyr::inner_join(frYGdf,mddf,by="Filename")
+YGfrdf.meta.prv <- dplyr::inner_join(frYGdf.prv,mddf,by="Filename")
+YGfrdf.meta.HR <- dplyr::inner_join(frYGdf.HR,mddf,by="Filename")
+YGfrdf.meta.prv.HR <- dplyr::inner_join(frYGdf.prv.HR,mddf,by="Filename")
+
+YGfrdf.m.plot <- YGfrdf.meta %>% dplyr::filter(Dilution!=10000) %>% 
+                      ggplot(aes(x=secbin,y=tbCounts,
+                                 color=Cytometer,fill=Cytometer)) +
+                      theme_bw() + 
+                      facet_grid(Dilution~Replicate,scales="free_y") + 
+                      geom_line(alpha=0.6) + scale_color_brewer(palette="Dark2")
+YGfrdf.m.plot + labs(x="Seconds",y="Number of events per 1/10 of a second",
+                     title="YG Beads flow rate 1/10s")
+
+
+YGfrdf.m.plot.prv <- YGfrdf.meta.prv %>% dplyr::filter(Dilution!=10000) %>% 
+                      ggplot(aes(x=secbin,y=tbCounts,
+                                 color=Cytometer,fill=Cytometer)) +
+                      theme_bw() + 
+                      facet_grid(Dilution~Replicate,scales="free_y") + 
+                      geom_line(alpha=0.6) + scale_color_brewer(palette="Dark2")
+YGfrdf.m.plot.prv + labs(x="Seconds",y="Number of events per 1/10 of a second",
+                     title="YG Beads flow rate 1/10s, with 20s preview for Attune")
+
+
+YGfrdf.m.plot.HR <- YGfrdf.meta.HR %>% dplyr::filter(Dilution!=10000&
+                                                    Dilution!=1000) %>% 
+                      ggplot(aes(x=secbin,y=tbCounts,
+                                 color=Cytometer,fill=Cytometer)) +
+                      theme_bw() + 
+                      facet_grid(Dilution~Replicate,scales="free_y") + 
+                      geom_line(alpha=0.6) + scale_color_brewer(palette="Dark2")
+YGfrdf.m.plot.HR + labs(x="Seconds",y="Number of events per 1/100 of a second",
+                     title="YG Beads flow rate 1/100s")
+
+
+YGfrdf.m.plot.prv.HR <- YGfrdf.meta.prv.HR %>% dplyr::filter(Dilution!=10000&
+                                                       Dilution!=1000) %>% 
+                      ggplot(aes(x=secbin,y=tbCounts,
+                                 color=Cytometer,fill=Cytometer)) +
+                      theme_bw() + 
+                      facet_grid(Dilution~Replicate,scales="free_y") + 
+                      geom_line(alpha=0.6) + scale_color_brewer(palette="Dark2")
+YGfrdf.m.plot.prv.HR + labs(x="Seconds",y="Number of events per 1/100 of a second",
+                     title="YG Beads flow rate 1/100s, with 20s preview for Attune")
+
+
+# xyplot(`BL1-H`~Time,attuneYGbeads.trf[GatingsamplesAttuneYG],
+#        scales=list(x=list(limits=c(0,60e3L))),nbin=2L^9,smooth=FALSE)
 
 ```
+
+#### Statistics
+
+Next, two gates were put at different timepoints to look at distributional 
+congruence for the BL1 (FITC) channel (peak-height was taken as a parameter).
+On the Attune and FACSVerse data a gate was placed between 5 and 15 seconds
+and 30 to 40 seconds, except in the undiluted sample, where the FACSVerse data
+was more limited in time and a gate was chosen between 2 and 7 seconds as well 
+as 12 and 17 seconds.
+
+##### Population-level statistics
+
+```{r twogatecomp, cache=TRUE}
+# TODO: pairwise test (Wilcox or t-test) on location parameters (e.g. MFI, median, CV)
+
+# Define rectangle gates -------------------------------------------------------
+rectGateAttuneTimept1 <- rectangleGate("Time"=c(5e3L,15e3L),
+                                    filterId = "TimeGateAttune1")
+rectGateAttuneTimept2 <- rectangleGate("Time"=c(30e3L,45e3L),
+                                    filterId = "TimeGateAttune2")
+rectGateFACSVerseundilTimept1 <- rectangleGate("Time"=c(2e3L,7e3L),
+                                    filterId = "TGFVud1")
+rectGateFACSVerseundilTimept2 <- rectangleGate("Time"=c(12e3L,17e3L),
+                                    filterId = "TGFVud2")
+
+# Create filters ---------------------------------------------------------------
+attuneYGbeads.trf.beads.tf1 <- flowCore::filter(attuneYGbeads.trf.beads,
+                                                rectGateAttuneTimept1)
+attuneYGbeads.trf.beads.tf2 <- flowCore::filter(attuneYGbeads.trf.beads,
+                                                rectGateAttuneTimept2)
+# FACSverse undiluted
+
+fvundilnamesYG <- mddf %>% filter(Dilution==1 & 
+                                  Cytometer == "FACSVerse" & 
+                                  Experiment == "YG")
+fvdilnamesYG <- mddf %>% filter(Dilution!=1 & 
+                                  Cytometer == "FACSVerse" & 
+                                  Experiment == "YG")
+
+VerseYGbeads.trf.beads.undil <- VerseYGbeads.trf.beads[fvundilnamesYG$Filename]
+
+VerseUndilYGbeads.trf.beads.tf1 <- flowCore::filter(VerseYGbeads.trf.beads.undil,
+                                                    rectGateFACSVerseundilTimept1)
+VerseUndilYGbeads.trf.beads.tf2 <- flowCore::filter(VerseYGbeads.trf.beads.undil,
+                                                    rectGateFACSVerseundilTimept2)
+
+VerseYGbeads.trf.beads.dil <- VerseYGbeads.trf.beads[fvdilnamesYG$Filename]
+
+VersedilYGbeads.trf.beads.tf1 <- flowCore::filter(VerseYGbeads.trf.beads.dil,
+                                                  rectGateAttuneTimept1)
+VersedilYGbeads.trf.beads.tf2 <- flowCore::filter(VerseYGbeads.trf.beads.dil,
+                                                    rectGateAttuneTimept2)
+
+# Use filters to subset data ---------------------------------------------------
+attuneYGbeads.trf.beads.ts1 <- flowCore::Subset(attuneYGbeads.trf.beads,
+                                                attuneYGbeads.trf.beads.tf1)
+attuneYGbeads.trf.beads.ts2 <- flowCore::Subset(attuneYGbeads.trf.beads,
+                                                attuneYGbeads.trf.beads.tf2)
+# facsverse undiluted
+VerseUndilYGbeads.trf.beads.ts1 <- flowCore::Subset(VerseYGbeads.trf.beads.undil,
+                                                    VerseUndilYGbeads.trf.beads.tf1)
+VerseUndilYGbeads.trf.beads.ts2 <- flowCore::Subset(VerseYGbeads.trf.beads.undil,
+                                                VerseUndilYGbeads.trf.beads.tf2)
+
+# facsverse diluted
+VersedilYGbeads.trf.beads.ts1 <- flowCore::Subset(VerseYGbeads.trf.beads.dil,
+                                                  VersedilYGbeads.trf.beads.tf1)
+VersedilYGbeads.trf.beads.ts2 <- flowCore::Subset(VerseYGbeads.trf.beads.dil,
+                                                VersedilYGbeads.trf.beads.tf2)
+
+
+# Extract and bind relevant data into data.frame for testing -------------------
+
+# Attune BRxx
+attune_ts1_yg <- lapply(fsApply(attuneYGbeads.trf.beads.ts1,
+                         function(x)data.frame(x@exprs)),function(x)x$BL1.H)
+attune_ts2_yg <- lapply(fsApply(attuneYGbeads.trf.beads.ts2,
+                         function(x)data.frame(x@exprs)),function(x)x$BL1.H)
+
+
+attune_ts1_yg.df <- do.call(rbind,lapply(seq_along(attune_ts1_yg),
+                           function(x)data.frame(BL1.H=attune_ts1_yg[[x]],
+                                                 Filename=names(attune_ts1_yg)[x],
+                                                 Gate="ts1")))
+
+attune_ts2_yg.df <- do.call(rbind,lapply(seq_along(attune_ts2_yg),
+                           function(x)data.frame(BL1.H=attune_ts2_yg[[x]],
+                                                 Filename=names(attune_ts2_yg)[x],
+                                                 Gate="ts2")))
+
+combinedtsattuneyg <- rbind(attune_ts1_yg.df,attune_ts2_yg.df)
+combinedtsattuneyg.md <- dplyr::inner_join(combinedtsattuneyg,mddf,by="Filename")
+
+combinedtsattuneyg.plot <- combinedtsattuneyg.md %>% 
+                              ggplot(aes(x=Gate,y=BL1.H,fill=Gate)) +
+                              geom_violin() +
+                              facet_grid(Dilution~Replicate)
+
+combinedtsattuneyg.plot + theme_bw() + ylab("asinh(BL1-H)")
+
+# FACSVerse 
+FVUD_ts1_yg <- lapply(fsApply(VerseUndilYGbeads.trf.beads.ts1,
+                         function(x)data.frame(x@exprs)),function(x)x$FITC.H)
+FVUD_ts2_yg <- lapply(fsApply(VerseUndilYGbeads.trf.beads.ts2,
+                         function(x)data.frame(x@exprs)),function(x)x$FITC.H)
+FVD_ts1_yg <- lapply(fsApply(VersedilYGbeads.trf.beads.ts1,
+                         function(x)data.frame(x@exprs)),function(x)x$FITC.H)
+FVD_ts2_yg <- lapply(fsApply(VersedilYGbeads.trf.beads.ts2,
+                         function(x)data.frame(x@exprs)),function(x)x$FITC.H)
+
+FVUD_ts1_yg.df <- do.call(rbind,lapply(seq_along(FVUD_ts1_yg),
+                           function(x)data.frame(BL1.H=FVUD_ts1_yg[[x]],
+                                                 Filename=names(FVUD_ts1_yg)[x],
+                                                 Gate="ts1")))
+FVUD_ts2_yg.df <- do.call(rbind,lapply(seq_along(FVUD_ts2_yg),
+                           function(x)data.frame(BL1.H=FVUD_ts2_yg[[x]],
+                                                 Filename=names(FVUD_ts2_yg)[x],
+                                                 Gate="ts2")))
+
+FVD_ts1_yg.df <- do.call(rbind,lapply(seq_along(FVD_ts1_yg),
+                           function(x)data.frame(BL1.H=FVD_ts1_yg[[x]],
+                                                 Filename=names(FVD_ts1_yg)[x],
+                                                 Gate="ts1")))
+FVD_ts2_yg.df <- do.call(rbind,lapply(seq_along(FVD_ts2_yg),
+                           function(x)data.frame(BL1.H=FVD_ts2_yg[[x]],
+                                                 Filename=names(FVD_ts2_yg)[x],
+                                                 Gate="ts2")))
+
+combinedtsverseyg <- rbind(FVUD_ts1_yg.df,FVUD_ts2_yg.df,
+                           FVD_ts1_yg.df,FVD_ts2_yg.df)
+combinedtsverseyg.md <- dplyr::inner_join(combinedtsverseyg,mddf,by="Filename")
+
+combinedtsverseyg.plot <- combinedtsverseyg.md %>% 
+                        ggplot(aes(x=Gate,y=BL1.H,fill=Gate)) +
+                        geom_violin() +
+                        facet_grid(Dilution~Replicate)
+
+combinedtsverseyg.plot + theme_bw() + ylab("asinh(FITC-H)")
+
+
+# Statistical testing for GOF  -------------------------------------------------
+combinedtsattuneyg.md.split <- split(combinedtsattuneyg.md,
+                                     f = combinedtsattuneyg.md$Filename)
+combinedtsVerseyg.md.split <- split(combinedtsverseyg.md,
+                                     f = combinedtsverseyg.md$Filename)
+
+
+ksresattune <- sapply(combinedtsattuneyg.md.split,function(x){
+  x.split <- split(x,f=x$Gate)
+  x.kstestres <- ks.test(x.split$ts1$BL1.H,x.split$ts2$BL1.H)$p.value
+  return(x.kstestres)
+})
+
+ksrVerse <- sapply(combinedtsVerseyg.md.split,function(x){
+  x.split <- split(x,f=x$Gate)
+  x.kstestres <- ks.test(x.split$ts1$BL1.H,x.split$ts2$BL1.H)$p.value
+  return(x.kstestres)
+})
+
+# cvmresattune <- sapply(combinedtsattuneyg.md.split,function(x){
+#   x.split <- split(x,f=x$Gate)
+#   cat(paste("Processing file",unique(x$Filename),"\n"))
+#   x.cvmtestres <- cramer.test(x.split$ts1$BL1.H,x.split$ts2$BL1.H,
+#                               sim = "permutation",replicates=100)$p.value
+#   return(x.cvmtestres)
+# })
+
+save(combinedtsattuneyg.md.split,file="AttuneYGsplitteddf.Rda")
+save(combinedtsVerseyg.md.split,file="FACSVerseYGsplitteddf.Rda")
+# below was time-intensive to run (45 min, and was hence run as an external script)
+# adresattune <- sapply(combinedtsattuneyg.md.split,function(x){
+#   x.split <- split(x,f=x$Gate)
+#   cat(paste("Processing file",unique(x$Filename),"\n"))
+#   x.adtestres <- kSamples::ad.test(x.split$ts1$BL1.H,x.split$ts2$BL1.H,
+#                               method = "simulated",Nsim=1000)
+#   return(x.adtestres)
+# })
+load("AD_test_AttuneYG.Rda")
+adresattune
+```
+
+##### Location based statistics
+
 
 
 ## Test 3: volumetric accuracy
@@ -687,6 +1155,66 @@ The only "golden truth" check here are the TruCount beads, but congruence on the
 other datasets is evaluated as well.
 
 ### YG Beads
+
+It appears that the volumetric linearity and reproducibility between the Attune
+and the FACSVerse is good.
+
+```{r volumecorrelationtestYG, cache=TRUE,fig.cap=c("Boxplots of beads concentrations along the dilution gradient, colored by flowcytometer type","log-log plot of bead concentrations on both machines, showing the fitted log-linear model and the adjusted R-squared")}
+cols <- RColorBrewer::brewer.pal(3,"Dark2")
+attunevols <- fsApply(attuneYGbeads.trf.beads,
+                      function(x)as.numeric(x@description$`$VOL`)/1e3L)
+attunecounts <- fsApply(attuneYGbeads.trf.beads,function(x)nrow(x))
+attuneconcdf <- data.frame(Filename=rownames(attunevols),count=attunecounts,
+                           volume=attunevols,conc_per_mL=attunecounts/attunevols*1e3L)
+attuneconcdf.meta <- dplyr::inner_join(attuneconcdf,mddf,by="Filename") %>% 
+                     dplyr::arrange(Dilution,Replicate)
+
+attunelinearity <- attuneconcdf.meta %>% group_by(factor(Dilution)) %>% 
+                      ggplot(aes(x=Dilution,y=conc_per_mL,group=factor(Dilution)))
+# attunelinearity  + geom_smooth() + scale_x_log10() + geom_boxplot(fill=cols[1]) + theme_bw()
+
+facsversevols <- fsApply(VerseYGbeads.trf.beads,
+                      function(x)as.numeric(x@description$VOL)/1e3L)
+facsversecounts <- fsApply(VerseYGbeads.trf.beads,function(x)nrow(x))
+facsverseconcdf <- data.frame(Filename=rownames(facsversevols),count=facsversecounts,
+                           volume=facsversevols,
+                           conc_per_mL=facsversecounts/facsversevols*1e3L)
+
+facsverseconcdf.meta <- dplyr::inner_join(facsverseconcdf,mddf,by="Filename")%>% 
+                        dplyr::arrange(Dilution,Replicate)
+linmodverseconcYG <- lm(conc_per_mL~Dilution,facsverseconcdf.meta)
+allconcYG.meta <- rbind(attuneconcdf.meta,facsverseconcdf.meta)
+
+linearityplot <- allconcYG.meta %>% ggplot(aes(x=factor(Dilution),y=conc_per_mL,
+                                               fill=Cytometer))
+linearityplot + geom_boxplot() + scale_y_log10()  + theme_bw(base_size = 20) + 
+                scale_fill_brewer(palette = "Dark2") + 
+                ylab("Concentration (beads/mL)") + xlab("Dilution")
+
+plot(log(facsverseconcdf.meta$conc_per_mL,base = 10),
+     log(attuneconcdf.meta[1:32,]$conc_per_mL,base=10),
+     xlab="FACSverse concentration (log10 beads/mL)",
+     ylab="Attune BRxx concentratin (log10 beads/mL)")
+
+logcondf <- data.frame(Cytometer=c(rep("BD FACSVerse",32),rep("Attune BRxx",32)),
+                       Log10Conc=c(log(facsverseconcdf.meta$conc_per_mL,
+                                    base = 10),
+                                   log(attuneconcdf.meta[1:32,]$conc_per_mL,
+                                    base=10)),
+                      Dilution=c(facsverseconcdf.meta$Dilution,
+                                 attuneconcdf.meta[1:32,]$Dilution))
+logcondfgood <- data.frame(FV=log(facsverseconcdf.meta$conc_per_mL,
+                                    base = 10),
+                           AT=log(attuneconcdf.meta[1:32,]$conc_per_mL,
+                                    base=10))
+logcondfgood.sorted <- logcondfgood[order(logcondfgood$FV),]
+
+linmodconcYG <- lm(AT~FV,data=logcondfgood.sorted)
+abline(linmodconcYG)
+lmodygsummary <- summary(linmodconcYG)
+mtext(bquote("Adjusted"~R^2==.(signif(lmodygsummary$adj.r.squared,3))))
+```
+
 
 # References
 
