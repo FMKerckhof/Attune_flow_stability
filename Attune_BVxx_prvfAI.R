@@ -55,30 +55,28 @@ flowAIcallR <- function(flowset,param=c("BL1-H","BL2-H","SSC-H","FSC-H"),
 
 
 ### load dataset ---------------------------------------------------------------
-load("AttuneYGBVxxbeads.Rda")
+load("attuneYGBVbeads.trf.prv.beads.Rda")
 
-### Preformat data -------------------------------------------------------------
-attuneYGBVbeads.trf.beadsevts <- fsApply(attuneYGBVbeads.trf.beads,
-                                         function(x){nrow(x)})
-attuneYGBVbeads.trf.beads.enough <- 
-  attuneYGBVbeads.trf.beads[attuneYGBVbeads.trf.beadsevts>1.5e3L]
+### flowAI reduced set ---------------------------------------------------------
+param_Attune_YGBV <- c("SSC-H","FSC-H","BL1-H")
 
-param_Attune_YG <- c("SSC-H","FSC-H","BL1-H")
+attuneYGBVbeads.trf.beads.QC.prv <- try(flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+                                                param=param_Attune_YGBV,
+                                                experiment="AttuneYGBV_preview",
+                                                minevents = 1.5e3L))
 
-### flowAI full set ------------------------------------------------------------
-attuneYGBVbeads.trf.beads.QC_LR <- try(flowAIcallR(attuneYGBVbeads.trf.beads,
-                                                param=param_Attune_YG,
-                                                experiment="AttuneYGBV_LR",
-                                                timesplit = 0.5))
+attuneYGBVbeads.trf.beads.QC.prv_HR <- try(flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+                                                   param=param_Attune_YGBV,
+                                                   experiment="AttuneYGBV_preview_HR",
+                                                   minevents = 1.5e3L,
+                                                   timesplit = 0.01))
 
-### flowAI enough obs ----------------------------------------------------------
-attuneYGBVbeads.trf.beads.QC_LR.enough <- try(flowAIcallR(attuneYGBVbeads.trf.beads.enough,
-                                                    param=param_Attune_YG,
-                                                    experiment="AttuneYGBV_LR_enough",
-                                                    timesplit = 0.5))
+attuneYGBVbeads.trf.beads.QC.prv_UHR <- try(flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+                                                    param=param_Attune_YGBV,
+                                                    experiment="AttuneYGBV_preview_UHR",
+                                                    minevents = 1.5e3L,
+                                                    timesplit = 0.005))
 
-### write out data -------------------------------------------------------------
-save(attuneYGBVbeads.trf.beads.QC_LR,
-     file = "attuneYGBVbeads.trf.beads.QC_LR.Rda")
-save(attuneYGBVbeads.trf.beads.QC_LR.enough,
-     file = "attuneYGBVbeads.trf.beads.QC_LR.enough.Rda")
+### write data out -------------------------------------------------------------
+save(attuneYGBVbeads.trf.beads.QC.prv,attuneYGBVbeads.trf.beads.QC.prv_HR,
+     attuneYGBVbeads.trf.beads.QC.prv_UHR,file="attuneYGbeads.prv.Rda")

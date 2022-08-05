@@ -609,37 +609,48 @@ attuneYGBVbeads.trf.beads.QC <- flowAIcallR(attuneYGBVbeads.trf.beads.enough,
 #                                           param=param_Attune_YG,
 #                                           experiment="AttuneYGBV_decomp",
 #                                           decomp = FALSE)
-attuneYGBVbeads.trf.beads.QC_UHR <- flowAIcallR(attuneYGBVbeads.trf.beads,
-                                          param=param_Attune_YGBV,
-                                          experiment="AttuneYGBV_UHR",
-                                          timesplit = 0.005)
+load("attuneYGBVbeads.trf.beads.QC_DEC.enough.Rda") #attuneYGBVbeads.trf.beads.QC_DEC.enough
 
-attuneYGBVbeads.trf.beads.QC_HR <- flowAIcallR(attuneYGBVbeads.trf.beads,
-                                          param=param_Attune_YGBV,
-                                          experiment="AttuneYGBV_HR",
-                                          timesplit = 0.01)
+# below was run in Attune_BVxx_UHRfAI.R
+# attuneYGBVbeads.trf.beads.QC_UHR <- flowAIcallR(attuneYGBVbeads.trf.beads,
+#                                           param=param_Attune_YGBV,
+#                                           experiment="AttuneYGBV_UHR",
+#                                           timesplit = 0.005)
+load("attuneYGBVbeads.trf.beads.QC_UHR.enough.Rda") #attuneYGBVbeads.trf.beads.QC_UHR.enough
 
-attuneYGBVbeads.trf.beads.QC_LR <- flowAIcallR(attuneYGBVbeads.trf.beads,
-                                          param=param_Attune_YGBV,
-                                          experiment="AttuneYGBV_LR",
-                                          timesplit = 0.5)
+# below was run in Attune_BVxx_HRfAI.R
+# attuneYGBVbeads.trf.beads.QC_HR <- flowAIcallR(attuneYGBVbeads.trf.beads,
+#                                           param=param_Attune_YGBV,
+#                                           experiment="AttuneYGBV_HR",
+#                                           timesplit = 0.01)
+load("attuneYGBVbeads.trf.beads.QC_HR.enough.Rda") #attuneYGBVbeads.trf.beads.QC_HR.enough
+
+# below was run in Attune_BVxx_LRfAI.R
+# attuneYGBVbeads.trf.beads.QC_LR <- flowAIcallR(attuneYGBVbeads.trf.beads,
+#                                           param=param_Attune_YGBV,
+#                                           experiment="AttuneYGBV_LR",
+#                                           timesplit = 0.5)
+load("attuneYGBVbeads.trf.beads.QC_LR.enough.Rda") #attuneYGBVbeads.trf.beads.QC_LR.enough
 ### Attune BVxx with prv flow AI calls YGBV --------------------------------------
-attuneYGBVbeads.trf.beads.QC.prv <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
-                                          param=param_Attune_YGBV,
-                                          experiment="AttuneYGBV_preview",
-                                          minevents = 2e3L)
-
-attuneYGBVbeads.trf.beads.QC.prv_HR <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
-                                          param=param_Attune_YGBV,
-                                          experiment="AttuneYGBV_preview_HR",
-                                          minevents = 2e3L,
-                                          timesplit = 0.01)
-
-attuneYGBVbeads.trf.beads.QC.prv_UHR <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
-                                          param=param_Attune_YGBV,
-                                          experiment="AttuneYGBV_preview_UHR",
-                                          minevents = 2e3L,
-                                          timesplit = 0.005)
+save(attuneYGBVbeads.trf.prv.beads,file="attuneYGBVbeads.trf.prv.beads.Rda")
+# below was run in Attune_BVxx_prvfAI.R
+# attuneYGBVbeads.trf.beads.QC.prv <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+#                                           param=param_Attune_YGBV,
+#                                           experiment="AttuneYGBV_preview",
+#                                           minevents = 2e3L)
+# 
+# attuneYGBVbeads.trf.beads.QC.prv_HR <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+#                                           param=param_Attune_YGBV,
+#                                           experiment="AttuneYGBV_preview_HR",
+#                                           minevents = 2e3L,
+#                                           timesplit = 0.01)
+# 
+# attuneYGBVbeads.trf.beads.QC.prv_UHR <- flowAIcallR(attuneYGBVbeads.trf.prv.beads,
+#                                           param=param_Attune_YGBV,
+#                                           experiment="AttuneYGBV_preview_UHR",
+#                                           minevents = 2e3L,
+#                                           timesplit = 0.005)
+load("attuneYGbeads.prv.Rda")
 ### FACSVerse flow AI calls YG -------------------------------------------------
 VerseYGbeads.trf.beads.QC <- flowAIcallR(VerseYGbeads.trf.beads,
                                           param=param_FACSVerse_YG,
@@ -721,6 +732,75 @@ AttuneYGQCfilterinfo.prv_UHR <- filterinfo(x=eventsAttuneYGQC.prv_UHR.df,
                                       joinw = eventsAttuneYGB4.prv.df,
                                        fAIfldr = "resultsQC_AttuneYG_preview_HR/",
                                        mth = "Preview20sUHR")
+### Data wrangling Attune BVxx YG ----------------------------------------------
+eventsAttuneYGBVB4     <- fsApply(attuneYGBVbeads.trf.beads,function(x)nrow(x))
+evetnsAttuneYGBVB4prf  <- fsApply(attuneYGBVbeads.trf.prv.beads,function(x)nrow(x))
+eventsAttuneYGBVQC     <- fsApply(attuneYGBVbeads.trf.beads.QC,function(x)nrow(x))
+eventsAttuneYGBVQC_DEQ <- fsApply(attuneYGBVbeads.trf.beads.QC_DEC.enough,
+                                function(x)nrow(x))
+eventsAttuneYGBVQC_UHR <- fsApply(attuneYGBVbeads.trf.beads.QC_UHR.enough,
+                                function(x)nrow(x))
+eventsAttuneYGBVQC_HR  <- fsApply(attuneYGBVbeads.trf.beads.QC_HR.enough,
+                                function(x)nrow(x))
+eventsAttuneYGBVQC_LR  <- fsApply(attuneYGBVbeads.trf.beads.QC_LR.enough,
+                                function(x)nrow(x))
+
+eventsAttuneYGBVQC.prv <- fsApply(attuneYGBVbeads.trf.beads.QC.prv,
+                                function(x)nrow(x))
+eventsAttuneYGBVQC.prv_HR <- fsApply(attuneYGBVbeads.trf.beads.QC.prv_HR,
+                                function(x)nrow(x))
+eventsAttuneYGBVQC.prv_UHR <- fsApply(attuneYGBVbeads.trf.beads.QC.prv_UHR,
+                                function(x)nrow(x))
+
+eventsAttuneYGBVB4.df <- data.frame(Filename=rownames(eventsAttuneYGBVB4),
+                                  events=eventsAttuneYGBVB4)
+eventsAttuneYGBVQC.df <- data.frame(Filename=rownames(eventsAttuneYGBVQC),
+                                  QCevents=eventsAttuneYGBVQC)
+eventsAttuneYGBVQC_DEQ.df     <-evtstodf(eventsAttuneYGBVQC_DEQ)
+eventsAttuneYGBVQC_UHR.df     <-evtstodf(eventsAttuneYGBVQC_UHR)
+eventsAttuneYGBVQC_HR.df      <-evtstodf(eventsAttuneYGBVQC_HR)
+eventsAttuneYGBVQC_LR.df      <-evtstodf(eventsAttuneYGBVQC_LR)
+eventsAttuneYGBVB4.prv.df     <-evtstodf(evetnsAttuneYGBVB4prf)
+eventsAttuneYGBVQC.prv.df     <-evtstodf(eventsAttuneYGBVQC.prv)
+eventsAttuneYGBVQC.prv_HR.df  <-evtstodf(eventsAttuneYGBVQC.prv_HR)
+eventsAttuneYGBVQC.prv_UHR.df <-evtstodf(eventsAttuneYGBVQC.prv_UHR)
+names(eventsAttuneYGBVB4.prv.df)[2]<-"events"
+
+AttuneYGBVQCfilterinfo <- dplyr::inner_join(eventsAttuneYGBVB4.df,
+                                        eventsAttuneYGBVQC.df,by="Filename")
+AttuneYGBVQCfilterinfo$percentRemoved <- (1-AttuneYGBVQCfilterinfo$QCevents/
+                                          AttuneYGBVQCfilterinfo$events)*100
+flowAIattuneYGBVQCinfo <- data.table::fread("resultsQC_AttuneYGBV/QCmini.txt")
+AttuneYGBVQCfilterinfo$percentFRAnomalies <- flowAIattuneYGBVQCinfo$`% anomalies flow Rate`
+AttuneYGBVQCfilterinfo$percentSGAnomalies <- flowAIattuneYGBVQCinfo$`% anomalies Signal`
+AttuneYGBVQCfilterinfo$percentDRAnomalies <- flowAIattuneYGBVQCinfo$`% anomalies Margins`
+AttuneYGBVQCfilterinfo$method <- "default"
+
+AttuneYGBVQCfilterinfo_DEQ <- filterinfo(x=eventsAttuneYGBVQC_DEQ.df,joinw=eventsAttuneYGBVB4.df,
+                                       fAIfldr = "resultsQC_AttuneYGBV_decomp_enough/",
+                                       mth = "decompFR_FALSE")
+AttuneYGBVQCfilterinfo_UHR <- filterinfo(x=eventsAttuneYGBVQC_UHR.df,joinw=eventsAttuneYGBVB4.df,
+                                       fAIfldr = "resultsQC_AttuneYGBV_UHR_enough//",
+                                       mth = "UHR")   
+AttuneYGBVQCfilterinfo_HR <- filterinfo(x=eventsAttuneYGBVQC_HR.df,joinw=eventsAttuneYGBVB4.df,
+                                       fAIfldr = "resultsQC_AttuneYGBV_HR/",
+                                       mth = "HR")
+AttuneYGBVQCfilterinfo_LR <- filterinfo(x=eventsAttuneYGBVQC_LR.df,
+                                       fAIfldr = "resultsQC_AttuneYGBV_LR/",
+                                       mth = "LR")
+AttuneYGBVQCfilterinfo.prv<- filterinfo(x=eventsAttuneYGBVQC.prv.df,
+                                      joinw = eventsAttuneYGBVB4.prv.df,
+                                       fAIfldr = "resultsQC_AttuneYGBV_preview/",
+                                       mth = "Preview20s")
+AttuneYGBVQCfilterinfo.prv_HR <- filterinfo(x=eventsAttuneYGBVQC.prv_HR.df,
+                                      joinw = eventsAttuneYGBVB4.prv.df,
+                                       fAIfldr = "resultsQC_AttuneYGBV_preview_HR/",
+                                       mth = "Preview20sHR")
+AttuneYGBVQCfilterinfo.prv_UHR <- filterinfo(x=eventsAttuneYGBVQC.prv_UHR.df,
+                                      joinw = eventsAttuneYGBVB4.prv.df,
+                                       fAIfldr = "resultsQC_AttuneYGBV_preview_HR/",
+                                       mth = "Preview20sUHR")
+
 ### Data wrangling FACSVerse YG ------------------------------------------------
 param_FACSVerse_YG <- c("SSC-H","FSC-H","FITC-H")
 

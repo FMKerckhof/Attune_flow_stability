@@ -66,19 +66,19 @@ attuneYGBVbeads.trf.beads.enough <-
 param_Attune_YG <- c("SSC-H","FSC-H","BL1-H")
 
 ### flowAI full set ------------------------------------------------------------
-attuneYGBVbeads.trf.beads.QC_DEC <- try(flowAIcallR(attuneYGBVbeads.trf.beads,
+attuneYGBVbeads.trf.beads.QC_UHR <- try(flowAIcallR(attuneYGBVbeads.trf.beads,
                                                 param=param_Attune_YG,
-                                                experiment="AttuneYGBV_decomp",
-                                                decomp = FALSE))
+                                                experiment="AttuneYGBV_UHR",
+                                                timesplit = 0.005))
 
 ### flowAI enough obs ----------------------------------------------------------
-attuneYGBVbeads.trf.beads.QC_DEC.enough <- try(flowAIcallR(attuneYGBVbeads.trf.beads.enough,
+attuneYGBVbeads.trf.beads.QC_UHR.enough <- try(flowAIcallR(attuneYGBVbeads.trf.beads.enough,
                                                     param=param_Attune_YG,
-                                                    experiment="AttuneYGBV_decomp_enough",
-                                                    decomp = FALSE))
+                                                    experiment="AttuneYGBV_UHR_enough",
+                                                    timesplit = 0.005))
 
 ### write out data -------------------------------------------------------------
-save(attuneYGBVbeads.trf.beads.QC_DEC,
-     file = "attuneYGBVbeads.trf.beads.QC_DEC.Rda")
-save(attuneYGBVbeads.trf.beads.QC_DEC.enough,
-     file = "attuneYGBVbeads.trf.beads.QC_DEC.enough.Rda")
+save(attuneYGBVbeads.trf.beads.QC_UHR,
+     file = "attuneYGBVbeads.trf.beads.QC_UHR.Rda")
+save(attuneYGBVbeads.trf.beads.QC_UHR.enough,
+     file = "attuneYGBVbeads.trf.beads.QC_UHR.enough.Rda")
